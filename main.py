@@ -6,7 +6,8 @@ import os
 import numpy as np
 import tqdm
 
-from utils.models import Classifier
+# from utils.models import Classifier
+from utils.models_new import Classifier
 from torch.utils.tensorboard import SummaryWriter
 from utils.loader import Loader
 from utils.loss import cross_entropy_loss_and_accuracy
