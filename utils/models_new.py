@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import numpy as np
 from torchvision.models.resnet import resnet34
 import tqdm
+import representations
 
 class ValueLayer(nn.Module):
     def __init__(self, mlp_layers, activation=nn.ReLU(), num_channels=9):
@@ -28,6 +29,7 @@ class ValueLayer(nn.Module):
 
         # init with trilinear kernel
         path = join(dirname(__file__), "quantization_layer_init", "trilinear_init.pth")
+        # path = False
         if isfile(path):
             state_dict = torch.load(path)
             self.load_state_dict(state_dict)
@@ -82,6 +84,83 @@ class ValueLayer(nn.Module):
 
         return gt_values
 
+####加入反向的ValueLayer,后续加入decoder,即：将voxel还原到事件流
+class ValueLayer_reverse(nn.Module):
+    def __init__(self, mlp_layers, activation=nn.ReLU(), num_channels=9):
+        assert mlp_layers[-1] == 1, "Last layer of the mlp must have 1 input channel."
+        assert mlp_layers[0] == 1, "First layer of the mlp must have 1 output channel"
+
+        nn.Module.__init__(self)
+        self.mlp = nn.ModuleList()
+        self.activation = activation
+
+        # create mlp
+        in_channels = 1
+        for out_channels in mlp_layers[1:]:
+            self.mlp.append(nn.Linear(in_channels, out_channels))
+            in_channels = out_channels
+
+        # init with trilinear kernel
+        # path = join(dirname(__file__), "quantization_layer_init", "trilinear_init.pth")
+        path = False
+        if isfile(path):
+            state_dict = torch.load(path)
+            self.load_state_dict(state_dict)
+        else:
+            self.init_kernel(num_channels)
+
+    def forward(self, x):
+        # create sample of batchsize 1 and input channels 1
+        x = x[None,...,None]
+
+        # apply mlp convolution
+        for i in range(len(self.mlp[:-1])):
+            x = self.activation(self.mlp[i](x))
+
+        x = self.mlp[-1](x)
+        x = x.squeeze()
+
+        return x
+
+    def init_kernel(self, num_channels): #工作流程翻一下，先产生随机时间数据作为gt，让trilinear产生的数据作为input，目的训俩网络是让input变成gt
+        gt = torch.zeros((1, 2000))
+        optim = torch.optim.Adam(self.parameters(), lr=1e-2)
+
+        torch.manual_seed(1)
+
+        for _ in tqdm.tqdm(range(1000)):  # converges in a reasonable time
+            optim.zero_grad()
+
+            # gt
+            gt.uniform_(-1, 1)
+
+            # input
+            input_values = self.trilinear_kernel(gt, num_channels)
+
+            # pred
+            values = self.forward(input_values)
+
+            # optimize
+            loss = (values[input_values!=0] - gt[input_values!=0]).pow(2).sum()
+
+            # print(loss)##测试
+
+            loss.backward()
+            optim.step()
+        print(loss)
+            
+
+
+    def trilinear_kernel(self, gt, num_channels):
+        input_values = torch.zeros_like(gt)
+
+        input_values[gt > 0] = (1 - (num_channels-1) * gt)[gt > 0]
+        input_values[gt < 0] = ((num_channels-1) * gt + 1)[gt < 0]
+
+        input_values[gt < -1.0 / (num_channels-1)] = 0
+        input_values[gt > 1.0 / (num_channels-1)] = 0
+
+        return input_values
 
 class QuantizationLayer(nn.Module):
     def __init__(self, dim,
@@ -95,7 +174,7 @@ class QuantizationLayer(nn.Module):
 
     def forward(self, events):
         # points is a list, since events can have any size
-        B = int((1+events[-1,-1]).item())
+        B = int((1+events[-1,-1]).item()) #这里的B是一个loader里面装载的“图片”数量
         num_voxels = int(2 * np.prod(self.dim) * B)
         vox = events[0].new_full([num_voxels,], fill_value=0)
         C, H, W = self.dim
@@ -113,20 +192,20 @@ class QuantizationLayer(nn.Module):
                           + W * y \
                           + 0 \
                           + W * H * C * p \
-                          + W * H * C * 2 * b
-
+                          + W * H * C * 2 * b #将位置，极性，通道，loader的装载量转换到编码
+        
         for i_bin in range(C):
-            values = t * self.value_layer.forward(t-i_bin/(C-1))
+            values = t * self.value_layer.forward(t-i_bin/(C-1)) #t已经归一化了，就是将一个事件流分成8段
 
             # draw in voxel grid
-            idx = idx_before_bins + W * H * i_bin
-            vox.put_(idx.long(), values, accumulate=True)
+            idx = idx_before_bins + W * H * i_bin #idx是加了8个通道过后的位置编码
+            vox.put_(idx.long(), values, accumulate=True) #put_方法就是按一维排序的方法，将values,也就是value_layers编码后的时间信息，放到vox中
 
         vox = vox.view(-1, 2, C, H, W)
-        vox = torch.cat([vox[:, 0, ...], vox[:, 1, ...]], 1)
+        vox = torch.cat([vox[:, 0, ...], vox[:, 1, ...]], 1) #把两个9通道合在一起，变成18通道的vox
 
         return vox
-
+    
 
 class Classifier(nn.Module):
     def __init__(self,
@@ -170,10 +249,6 @@ class Classifier(nn.Module):
         vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
         pred = self.classifier.forward(vox_cropped)
         return pred, vox
-
-
-
-
 
 class SuperPointNet(torch.nn.Module):
   """ Pytorch definition of SuperPoint Network. """
@@ -290,3 +365,8 @@ class SuperPointNet(torch.nn.Module):
     # output = {'semi': semi, 'desc': desc}
 
     # return output
+
+####作为网络局部测试
+if __name__ == '__main__':
+    reverse_value_layer = ValueLayer_reverse(mlp_layers=[1, 100, 100, 1])
+    print("finish initialization")
