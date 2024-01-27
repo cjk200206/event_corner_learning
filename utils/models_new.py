@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import numpy as np
 from torchvision.models.resnet import resnet34
 import tqdm
-import representations
+from .models_deep_ev.correlation3_unscaled import JointEncoder_new
 
 class ValueLayer(nn.Module):
     def __init__(self, mlp_layers, activation=nn.ReLU(), num_channels=9):
@@ -217,19 +217,24 @@ class Classifier(nn.Module):
                  pretrained=True):
         nn.Module.__init__(self)
         self.quantization_layer = QuantizationLayer(voxel_dimension, mlp_layers, activation)
-        # self.classifier = resnet34(pretrained=pretrained)
-        self.classifier = SuperPointNet(num_classes)
-
         self.crop_dimension = crop_dimension
-
-        # replace fc layer and first convolutional layer
+        # 原版
+        # self.classifier = resnet34(pretrained=pretrained)
+        
+        ## replace fc layer and first convolutional layer
         # input_channels = 2*voxel_dimension[0]
         # self.classifier.conv1 = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
         # self.classifier.fc = nn.Linear(self.classifier.fc.in_features, num_classes)
 
-        input_channels = 2*voxel_dimension[0]
-        self.classifier.conv1a = nn.Conv2d(input_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        # 替代1.SuperpointNet
+        # self.classifier = SuperPointNet(num_classes)
+        # input_channels = 2*voxel_dimension[0]
+        # self.classifier.conv1a = nn.Conv2d(input_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
 
+        # 替代2.Deep_ev
+        input_channels = 2*voxel_dimension[0]
+        self.classifier = JointEncoder_new(input_channels,num_classes)
+        
 
     def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
         B, C, H, W = x.shape
