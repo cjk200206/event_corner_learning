@@ -2,6 +2,7 @@ import torch.nn.functional as F
 import torch.nn.init
 
 from .common import *
+from .convlstm import *
 # from models.template import Template
 # from utils.losses import *
 
@@ -277,29 +278,42 @@ class JointEncoder_new(nn.Module):
         self.conv2 = ConvBlock(
             in_channels=64, out_channels=128, n_convs=2, downsample=True
         )
-        self.convlstm0 = ConvLSTMCell(128, 128, 3)
+        self.convlstm0 = ConvLSTM(128, 128, (3,3), 1)
+        self.pooling = nn.MaxPool2d(kernel_size=2,stride=2)
         self.conv3 = ConvBlock(
             in_channels=128, out_channels=256, n_convs=2, downsample=True
         )
         self.conv4 = ConvBlock(
-            in_channels=256,
-            out_channels=256,
+            in_channels=256, out_channels=512, n_convs=2, downsample=True
+        )
+        self.convlstm1 = ConvLSTM(512, 512, (3,3), 1)
+        self.conv5 = ConvBlock(
+            in_channels=512,
+            out_channels=512,
             kernel_size=3,
             padding=1,
-            n_convs=1,
+            n_convs=2,
             downsample=False,
         )
+        # self.conv4 = ConvBlock(
+        #     in_channels=256,
+        #     out_channels=256,
+        #     kernel_size=3,
+        #     padding=1,
+        #     n_convs=1,
+        #     downsample=False,
+        # )
 
         # Transformer Addition
-        self.flatten0 = nn.Flatten(start_dim=2,end_dim=-1) #修改后，时间(深度)通道保留，xy像素通道展平，形状变成[4,256,x*x]
+        # self.flatten0 = nn.Flatten(start_dim=2,end_dim=-1) #修改后，时间(深度)通道保留，xy像素通道展平，形状变成[4,256,x*x]
         self.flatten1 = nn.Flatten() #把所有通道展平
-        embed_dim = 784
-        num_heads = 8
-        self.multihead_attention0 = nn.MultiheadAttention(
-            embed_dim, num_heads, batch_first=True
-        )
+        # embed_dim = 784
+        # num_heads = 8
+        # self.multihead_attention0 = nn.MultiheadAttention(
+        #     embed_dim, num_heads, batch_first=True
+        # )
 
-        self.gates = nn.Linear(2 * embed_dim, embed_dim)
+        # self.gates = nn.Linear(2 * embed_dim, embed_dim)
 
         # Attention Mask Transformer
         # self.fusion_layer0 = nn.Sequential(
@@ -308,13 +322,19 @@ class JointEncoder_new(nn.Module):
         #     nn.Linear(embed_dim, embed_dim),
         #     nn.LeakyReLU(0.1),
         # )
-        self.output_layers1 = nn.Sequential(
-            nn.Linear(embed_dim, 512), 
+        # self.output_layers1 = nn.Sequential(
+        #     nn.Linear(embed_dim, 512), 
+        #     nn.LeakyReLU(0.1),
+        #     nn.Linear(512,out_channels),
+        #     nn.LeakyReLU(0.1)
+        # )
+        # self.output_layers2 = nn.Linear(256*out_channels,out_channels)
+        self.output_layers3 = nn.Sequential(
+            nn.Linear(512*9, 512), 
             nn.LeakyReLU(0.1),
             nn.Linear(512,out_channels),
             nn.LeakyReLU(0.1)
         )
-        self.output_layers2 = nn.Linear(256*out_channels,out_channels)
 
     def reset(self):
         self.convlstm0.reset()
@@ -324,15 +344,21 @@ class JointEncoder_new(nn.Module):
     def forward(self, x, attn_mask=None):
         x = self.conv1(x)
         x = self.conv2(x)
-        x = self.convlstm0(x)
+        # x,_ = self.convlstm0(x)
+        x = self.pooling(x)
         x = self.conv3(x)
         x = self.conv4(x)
-        x = self.flatten0(x)      
+        # x,_ = self.convlstm1(x)
+        x = self.pooling(x)
+        x = self.conv5(x)
+        # x = self.flatten0(x)      
     
-        x = self.multihead_attention0(query=x, key=x, value=x)[0].squeeze(0)
+        # x = self.multihead_attention0(query=x, key=x, value=x)[0].squeeze(0)
 
-        x = self.output_layers1(x)
+        # x = self.output_layers1(x)
+        # x = self.flatten1(x)
+        # x = self.output_layers2(x)
         x = self.flatten1(x)
-        x = self.output_layers2(x)
+        x = self.output_layers3(x)
 
         return x

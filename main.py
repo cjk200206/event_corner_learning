@@ -157,9 +157,10 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             pred_labels, representation = model(events)
-            loss, accuracy = cross_entropy_loss_and_accuracy(pred_labels, labels)
+            with torch.autograd.detect_anomaly():
+                loss, accuracy = cross_entropy_loss_and_accuracy(pred_labels, labels)
 
-            loss.backward(retain_graph=True)
+                loss.backward(retain_graph=True)
 
             optimizer.step()
 

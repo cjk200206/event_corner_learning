@@ -177,7 +177,7 @@ class QuantizationLayer(nn.Module):
         B = int((1+events[-1,-1]).item()) #这里的B是一个loader里面装载的“图片”数量
         num_voxels = int(2 * np.prod(self.dim) * B)
         vox = events[0].new_full([num_voxels,], fill_value=0)
-        C, H, W = self.dim
+        T, H, W = self.dim
 
         # get values for each channel
         x, y, t, p, b = events.t()
@@ -191,17 +191,17 @@ class QuantizationLayer(nn.Module):
         idx_before_bins = x \
                           + W * y \
                           + 0 \
-                          + W * H * C * p \
-                          + W * H * C * 2 * b #将位置，极性，通道，loader的装载量转换到编码
+                          + W * H * T * p \
+                          + W * H * T * 2 * b #将位置，极性，通道，loader的装载量转换到编码
         
-        for i_bin in range(C):
-            values = t * self.value_layer.forward(t-i_bin/(C-1)) #t已经归一化了，就是将一个事件流分成8段
+        for i_bin in range(T):
+            values = t * self.value_layer.forward(t-i_bin/(T-1)) #t已经归一化了，就是将一个事件流分成8段
 
             # draw in voxel grid
             idx = idx_before_bins + W * H * i_bin #idx是加了8个通道过后的位置编码
             vox.put_(idx.long(), values, accumulate=True) #put_方法就是按一维排序的方法，将values,也就是value_layers编码后的时间信息，放到vox中
 
-        vox = vox.view(-1, 2, C, H, W)
+        vox = vox.view(-1, 2, T, H, W)
         vox = torch.cat([vox[:, 0, ...], vox[:, 1, ...]], 1) #把两个9通道合在一起，变成18通道的vox
 
         return vox
@@ -221,7 +221,7 @@ class Classifier(nn.Module):
         # 原版
         # self.classifier = resnet34(pretrained=pretrained)
         
-        ## replace fc layer and first convolutional layer
+        # # replace fc layer and first convolutional layer
         # input_channels = 2*voxel_dimension[0]
         # self.classifier.conv1 = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
         # self.classifier.fc = nn.Linear(self.classifier.fc.in_features, num_classes)
@@ -244,6 +244,14 @@ class Classifier(nn.Module):
         else:
             h = W // 2
             x = x[:, :, :, h - H // 2:h + H // 2]
+
+        # B, C, T, H, W = x.shape
+        # if H > W:
+        #     h = H // 2
+        #     x = x[:, :, :,h - W // 2:h + W // 2, :]
+        # else:
+        #     h = W // 2
+        #     x = x[:, :, :, :, h - H // 2:h + H // 2]
 
         x = F.interpolate(x, size=output_resolution)
 

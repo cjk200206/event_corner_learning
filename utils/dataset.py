@@ -53,3 +53,29 @@ class NCaltech101:
             events = random_flip_events_along_x(events)
 
         return events, label
+    
+class Syn_Events:
+    """
+        syn_corner数据集通过syn2e建立,具体格式如下：
+        /datasets
+            /train
+                /syn_polygon
+                    /events
+                        /0
+                        /1
+                        /2
+                        /others
+                    /event_corners
+                    /others
+                /syn_mutiple_polygons
+                /others
+            /val
+    """
+    def __init__(self,root):
+        self.classes = listdir(root)
+        self.events_root = join(root,"events") #syn_corner数据集里面的events
+        self.event_corners_root = join(root,"event_corners") #同上
+        
+
+
+        
