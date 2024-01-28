@@ -1,7 +1,8 @@
 import numpy as np
 from os import listdir
 from os.path import join
-
+import os
+from torch.utils.data import Dataset
 
 def random_shift_events(events, max_shift=20, resolution=(180, 240)):
     H, W = resolution
@@ -54,7 +55,7 @@ class NCaltech101:
 
         return events, label
     
-class Syn_Events:
+class Syn_Events(Dataset):
     """
         syn_corner数据集通过syn2e建立,具体格式如下：
         /datasets
@@ -62,6 +63,9 @@ class Syn_Events:
                 /syn_polygon
                     /events
                         /0
+                            /0000000000.txt
+                            /0000000001.txt
+                            /others
                         /1
                         /2
                         /others
@@ -71,10 +75,53 @@ class Syn_Events:
                 /others
             /val
     """
-    def __init__(self,root):
-        self.classes = listdir(root)
-        self.events_root = join(root,"events") #syn_corner数据集里面的events
-        self.event_corners_root = join(root,"event_corners") #同上
+    def __init__(self,root): #这里的root从/train或者/val开始
+        self.events_paths = [] # e.g. /datasets/train/syn_polygon/events/0
+        self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
+
+        self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
+        self.event_corners_files = []
+
+        for path, dirs, files in os.walk(root):
+            if path.split('/')[-1] == 'events':
+                for dir in sorted(dirs): # 加入文件夹/0 -> /xxx
+                    self.events_paths.append(join(path,dir))
+                    for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
+                        self.events_files.append(join(path,dir,file))
+
+            elif path.split('/')[-1] =='event_corners':
+                for dir in sorted(dirs):
+                    self.event_corners_paths.append(join(path,dir))
+                    for file in sorted(listdir(join(path,dir))):
+                        self.event_corners_files.append(join(path,dir,file))
+            else:
+                continue
+    
+    def __len__(self):
+        return len(self.events_files)
+    
+    def __getitem__(self, idx):
+        """
+        returns events and event_corners, load from txts
+        :param idx:
+        :return: x,y,t,p x,y,t,p
+        """
+        e_f = self.events_files[idx]
+        e_c_f = self.event_corners_files[idx]
+        events = np.loadtxt(e_f).astype(np.float32)
+        event_corners = np.loadtxt(e_c_f).astype(np.float32)
+
+        return events, event_corners
+
+if __name__ =='__main__':
+    dataset_root = "/remote-home/share/cjk/syn2e/datasets"
+    train_root = join(dataset_root,"train")
+    
+    train_dataset = Syn_Events(train_root)
+
+    print("test dataset validation")
+
+
         
 
 
