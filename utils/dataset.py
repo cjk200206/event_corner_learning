@@ -21,6 +21,15 @@ def random_flip_events_along_x(events, resolution=(180, 240), p=0.5):
         events[:,0] = W - 1 - events[:,0]
     return events
 
+def event_cropping(events,length,piece = 1000): #随机裁剪一个事件的片段，作为输入
+    start_idx = np.random.randint(0,length-piece-1)
+    end_idx = int(start_idx+piece)
+
+    cropped_events = events[start_idx:end_idx]
+
+    return cropped_events,start_idx,end_idx
+
+
 
 class NCaltech101:
     def __init__(self, root, augmentation=False):
@@ -75,12 +84,13 @@ class Syn_Events(Dataset):
                 /others
             /val
     """
-    def __init__(self,root): #这里的root从/train或者/val开始
+    def __init__(self,root,event_crop = True): #这里的root从/train或者/val开始
         self.events_paths = [] # e.g. /datasets/train/syn_polygon/events/0
         self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
 
         self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
         self.event_corners_files = []
+        self.event_crop = event_crop # 决定是否需要裁剪事件片段
 
         for path, dirs, files in os.walk(root):
             if path.split('/')[-1] == 'events':
@@ -111,7 +121,10 @@ class Syn_Events(Dataset):
         events = np.loadtxt(e_f).astype(np.float32)
         event_corners = np.loadtxt(e_c_f).astype(np.float32)
 
-        return events, event_corners
+        if self.event_crop:
+            events,start_idx,end_idx = event_cropping(events,len(events),piece=1000)
+            # event_corners = event_corners[start_idx:end_idx]
+        return events
 
 if __name__ =='__main__':
     dataset_root = "/remote-home/share/cjk/syn2e/datasets"
