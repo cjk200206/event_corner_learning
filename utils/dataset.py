@@ -70,7 +70,7 @@ class Syn_Events(Dataset):
         /datasets
             /train
                 /syn_polygon
-                    /events
+                    /augmented_events
                         /0
                             /0000000000.txt
                             /0000000001.txt
@@ -79,6 +79,7 @@ class Syn_Events(Dataset):
                         /2
                         /others
                     /event_corners
+                    /events
                     /others
                 /syn_mutiple_polygons
                 /others
@@ -89,21 +90,14 @@ class Syn_Events(Dataset):
         self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
 
         self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
-        self.event_corners_files = []
         self.event_crop = event_crop # 决定是否需要裁剪事件片段
 
         for path, dirs, files in os.walk(root):
-            if path.split('/')[-1] == 'events':
-                for dir in sorted(dirs): # 加入文件夹/0 -> /xxx
+            if path.split('/')[-1] == 'augmented_events':
+                for dir in sorted(dirs): # 加入文件夹/0 -> /100
                     self.events_paths.append(join(path,dir))
                     for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
                         self.events_files.append(join(path,dir,file))
-
-            elif path.split('/')[-1] =='event_corners':
-                for dir in sorted(dirs):
-                    self.event_corners_paths.append(join(path,dir))
-                    for file in sorted(listdir(join(path,dir))):
-                        self.event_corners_files.append(join(path,dir,file))
             else:
                 continue
     
@@ -114,17 +108,19 @@ class Syn_Events(Dataset):
         """
         returns events and event_corners, load from txts
         :param idx:
-        :return: x,y,t,p x,y,t,p
+        :return: x,y,t,p  label
         """
         e_f = self.events_files[idx]
-        e_c_f = self.event_corners_files[idx]
-        events = np.loadtxt(e_f).astype(np.float32)
-        event_corners = np.loadtxt(e_c_f).astype(np.float32)
+        augmented_events = np.loadtxt(e_f).astype(np.float32)
+
 
         if self.event_crop:
-            events,start_idx,end_idx = event_cropping(events,len(events),piece=1000)
-            # event_corners = event_corners[start_idx:end_idx]
-        return events
+            augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),piece=1000)
+        
+        events = augmented_events[:,0:4]
+        labels = augmented_events[:,-1]
+
+        return events,labels
 
 if __name__ =='__main__':
     dataset_root = "/remote-home/share/cjk/syn2e/datasets"
