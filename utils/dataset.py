@@ -21,9 +21,17 @@ def random_flip_events_along_x(events, resolution=(180, 240), p=0.5):
         events[:,0] = W - 1 - events[:,0]
     return events
 
-def event_cropping(events,length,piece = 1001): #随机裁剪一个事件的片段，作为输入,最后一位单独作为需检验的。
-    start_idx = np.random.randint(0,length-piece-1)
-    end_idx = int(start_idx+piece)
+# def event_cropping(events,length,piece = 1001): #随机裁剪一个事件的片段，作为输入,最后一位单独作为需检验的。
+#     start_idx = np.random.randint(0,length-piece-1)
+#     end_idx = int(start_idx+piece)
+
+#     cropped_events = events[start_idx:end_idx]
+
+#     return cropped_events,start_idx,end_idx
+
+def event_cropping(events,length,percent = 0.1): #随机裁剪一个事件的片段，作为输入,最后一位单独作为需检验的。
+    start_idx = np.random.randint(0,length-percent*length-1)
+    end_idx = int(start_idx+percent*length)
 
     cropped_events = events[start_idx:end_idx]
 
@@ -115,7 +123,8 @@ class Syn_Events(Dataset):
 
 
         if self.event_crop:
-            augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),piece=1001)
+            # augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),piece=1001)
+            augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),percent=0.1)
         
         events = augmented_events[:,0:4]
         labels = augmented_events[:,-1]
