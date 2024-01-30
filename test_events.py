@@ -66,6 +66,7 @@ if __name__ == '__main__':
 
     print("Test step")
     for events,labels in tqdm.tqdm(iter(test_loader)):
-        print("events:{},event_corners:{}".format(events,labels))
-        # print("events:{}".format(events))
+        the_last_pairs = {"events":events[:,-1,:],"labels":labels[:,-1]}
+        # print("events:{},event_corners:{}".format(events,labels))
+        print("the last pair:{}".format(the_last_pairs))
 
