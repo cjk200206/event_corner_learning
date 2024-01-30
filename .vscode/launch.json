@@ -6,6 +6,24 @@
     "configurations": [
 
         {
+            "name": "train_event_corners测试",
+            "type": "python",
+            "request": "launch",
+            "program": "train_event_corners.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--validation_dataset",
+                "/remote-home/share/cjk/syn2e/datasets/test",
+                "--training_dataset",
+                "/remote-home/share/cjk/syn2e/datasets/test",
+                "--log_dir",
+                "log/modify",
+                "--device",
+                "cuda:0"
+            ]
+        },
+        {
             "name": "网络测试",
             "type": "python",
             "request": "launch",
@@ -13,10 +31,14 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--validation_dataset","N-Caltech101/validation/",
-                "--training_dataset","N-Caltech101/training/",
-                "--log_dir","log/modify",
-                "--device","cuda:0"
+                "--validation_dataset",
+                "N-Caltech101/validation/",
+                "--training_dataset",
+                "N-Caltech101/training/",
+                "--log_dir",
+                "log/modify",
+                "--device",
+                "cuda:0"
             ]
         }
     ]

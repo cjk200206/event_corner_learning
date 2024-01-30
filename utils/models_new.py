@@ -84,84 +84,6 @@ class ValueLayer(nn.Module):
 
         return gt_values
 
-####加入反向的ValueLayer,后续加入decoder,即：将voxel还原到事件流
-class ValueLayer_reverse(nn.Module):
-    def __init__(self, mlp_layers, activation=nn.ReLU(), num_channels=9):
-        assert mlp_layers[-1] == 1, "Last layer of the mlp must have 1 input channel."
-        assert mlp_layers[0] == 1, "First layer of the mlp must have 1 output channel"
-
-        nn.Module.__init__(self)
-        self.mlp = nn.ModuleList()
-        self.activation = activation
-
-        # create mlp
-        in_channels = 1
-        for out_channels in mlp_layers[1:]:
-            self.mlp.append(nn.Linear(in_channels, out_channels))
-            in_channels = out_channels
-
-        # init with trilinear kernel
-        # path = join(dirname(__file__), "quantization_layer_init", "trilinear_init.pth")
-        path = False
-        if isfile(path):
-            state_dict = torch.load(path)
-            self.load_state_dict(state_dict)
-        else:
-            self.init_kernel(num_channels)
-
-    def forward(self, x):
-        # create sample of batchsize 1 and input channels 1
-        x = x[None,...,None]
-
-        # apply mlp convolution
-        for i in range(len(self.mlp[:-1])):
-            x = self.activation(self.mlp[i](x))
-
-        x = self.mlp[-1](x)
-        x = x.squeeze()
-
-        return x
-
-    def init_kernel(self, num_channels): #工作流程翻一下，先产生随机时间数据作为gt，让trilinear产生的数据作为input，目的训俩网络是让input变成gt
-        gt = torch.zeros((1, 2000))
-        optim = torch.optim.Adam(self.parameters(), lr=1e-2)
-
-        torch.manual_seed(1)
-
-        for _ in tqdm.tqdm(range(1000)):  # converges in a reasonable time
-            optim.zero_grad()
-
-            # gt
-            gt.uniform_(-1, 1)
-
-            # input
-            input_values = self.trilinear_kernel(gt, num_channels)
-
-            # pred
-            values = self.forward(input_values)
-
-            # optimize
-            loss = (values[input_values!=0] - gt[input_values!=0]).pow(2).sum()
-
-            # print(loss)##测试
-
-            loss.backward()
-            optim.step()
-        print(loss)
-            
-
-
-    def trilinear_kernel(self, gt, num_channels):
-        input_values = torch.zeros_like(gt)
-
-        input_values[gt > 0] = (1 - (num_channels-1) * gt)[gt > 0]
-        input_values[gt < 0] = ((num_channels-1) * gt + 1)[gt < 0]
-
-        input_values[gt < -1.0 / (num_channels-1)] = 0
-        input_values[gt > 1.0 / (num_channels-1)] = 0
-
-        return input_values
-
 class QuantizationLayer(nn.Module):
     def __init__(self, dim,
                  mlp_layers=[1, 100, 100, 1],
@@ -192,7 +114,7 @@ class QuantizationLayer(nn.Module):
                           + W * y \
                           + 0 \
                           + W * H * T * p \
-                          + W * H * T * 2 * b #将位置，极性，通道，loader的装载量转换到编码
+                          + W * H * T * 2 * b #将位置，极性，通道，loader的装载量(batch_size)转换到编码
         
         for i_bin in range(T):
             values = t * self.value_layer.forward(t-i_bin/(T-1)) #t已经归一化了，就是将一个事件流分成8段
@@ -206,7 +128,6 @@ class QuantizationLayer(nn.Module):
 
         return vox
     
-
 class Classifier(nn.Module):
     def __init__(self,
                  voxel_dimension=(9,180,240),  # dimension of voxel will be C x 2 x H x W
@@ -219,12 +140,12 @@ class Classifier(nn.Module):
         self.quantization_layer = QuantizationLayer(voxel_dimension, mlp_layers, activation)
         self.crop_dimension = crop_dimension
         # 原版
-        # self.classifier = resnet34(pretrained=pretrained)
+        self.classifier = resnet34(pretrained=pretrained)
         
-        # # replace fc layer and first convolutional layer
-        # input_channels = 2*voxel_dimension[0]
-        # self.classifier.conv1 = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        # self.classifier.fc = nn.Linear(self.classifier.fc.in_features, num_classes)
+        # replace fc layer and first convolutional layer
+        input_channels = 2*voxel_dimension[0]
+        self.classifier.conv1 = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.classifier.fc = nn.Linear(self.classifier.fc.in_features, num_classes)
 
         # 替代1.SuperpointNet
         # self.classifier = SuperPointNet(num_classes)
@@ -232,8 +153,8 @@ class Classifier(nn.Module):
         # self.classifier.conv1a = nn.Conv2d(input_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
 
         # 替代2.Deep_ev
-        input_channels = 2*voxel_dimension[0]
-        self.classifier = JointEncoder_new(input_channels,num_classes)
+        # input_channels = 2*voxel_dimension[0]
+        # self.classifier = JointEncoder_new(input_channels,num_classes)
         
 
     def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
@@ -263,6 +184,76 @@ class Classifier(nn.Module):
         pred = self.classifier.forward(vox_cropped)
         return pred, vox
 
+#专门用于对事件角点的训练
+class EventCornerClassifier(nn.Module):
+    def __init__(self,
+                 voxel_dimension=(9,260,346),  # dimension of voxel will be C x 2 x H x W，生成数据集是仿DAVIS346,即（260,246）
+                 crop_dimension=(224, 224),  # dimension of crop before it goes into classifier
+                 num_classes=2,
+                 mlp_layers=[1, 30, 30, 1],
+                 activation=nn.LeakyReLU(negative_slope=0.1),
+                 pretrained=True):
+        nn.Module.__init__(self)
+        self.quantization_layer = QuantizationLayer(voxel_dimension, mlp_layers, activation)
+        self.crop_dimension = crop_dimension
+        # 原版
+        self.backbone = resnet34(pretrained=pretrained)
+        # replace fc layer and first convolutional layer
+        input_channels = 2*voxel_dimension[0]
+        self.backbone.conv1 = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, num_classes*4) # 这里不是结束，还要融合
+
+        # 加入末尾点（需要探测的那个点）
+        self.point_net = nn.Sequential(
+            nn.Linear(4,16),
+            nn.ReLU(),
+            nn.Linear(16,4*num_classes),
+            nn.ReLU()
+        )
+        # 融合vox和末尾点
+        self.merge_net = nn.Sequential(
+            nn.Linear(2*num_classes*4,2*num_classes),
+            nn.ReLU(),
+            nn.Linear(2*num_classes,num_classes),
+            nn.ReLU(),
+            nn.Linear(num_classes,num_classes)
+        )
+
+
+    
+    def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
+        B, C, H, W = x.shape
+        if H > W:
+            h = H // 2
+            x = x[:, :, h - W // 2:h + W // 2, :]
+        else:
+            h = W // 2
+            x = x[:, :, :, h - H // 2:h + H // 2]
+
+        # B, C, T, H, W = x.shape
+        # if H > W:
+        #     h = H // 2
+        #     x = x[:, :, :,h - W // 2:h + W // 2, :]
+        # else:
+        #     h = W // 2
+        #     x = x[:, :, :, :, h - H // 2:h + H // 2]
+
+        x = F.interpolate(x, size=output_resolution)
+
+        return x
+
+    def forward(self, x, points):
+        vox = self.quantization_layer.forward(x)
+        vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
+        temp_pred = self.backbone.forward(vox_cropped)
+        points_pred = self.point_net.forward(points)
+
+        merged_pred = torch.cat((temp_pred,points_pred),dim=1)
+        pred = self.merge_net.forward(merged_pred)
+        return pred, vox
+
+
+# 迁移来的Superpoint
 class SuperPointNet(torch.nn.Module):
   """ Pytorch definition of SuperPoint Network. """
   def __init__(self,num_classes):
@@ -379,7 +370,85 @@ class SuperPointNet(torch.nn.Module):
 
     # return output
 
-####作为网络局部测试
+# 加入反向的ValueLayer,后续加入decoder,即：将voxel还原到事件流
+# class ValueLayer_reverse(nn.Module):
+#     def __init__(self, mlp_layers, activation=nn.ReLU(), num_channels=9):
+#         assert mlp_layers[-1] == 1, "Last layer of the mlp must have 1 input channel."
+#         assert mlp_layers[0] == 1, "First layer of the mlp must have 1 output channel"
+
+#         nn.Module.__init__(self)
+#         self.mlp = nn.ModuleList()
+#         self.activation = activation
+
+#         # create mlp
+#         in_channels = 1
+#         for out_channels in mlp_layers[1:]:
+#             self.mlp.append(nn.Linear(in_channels, out_channels))
+#             in_channels = out_channels
+
+#         # init with trilinear kernel
+#         # path = join(dirname(__file__), "quantization_layer_init", "trilinear_init.pth")
+#         path = False
+#         if isfile(path):
+#             state_dict = torch.load(path)
+#             self.load_state_dict(state_dict)
+#         else:
+#             self.init_kernel(num_channels)
+
+#     def forward(self, x):
+#         # create sample of batchsize 1 and input channels 1
+#         x = x[None,...,None]
+
+#         # apply mlp convolution
+#         for i in range(len(self.mlp[:-1])):
+#             x = self.activation(self.mlp[i](x))
+
+#         x = self.mlp[-1](x)
+#         x = x.squeeze()
+
+#         return x
+
+#     def init_kernel(self, num_channels): #工作流程翻一下，先产生随机时间数据作为gt，让trilinear产生的数据作为input，目的训俩网络是让input变成gt
+#         gt = torch.zeros((1, 2000))
+#         optim = torch.optim.Adam(self.parameters(), lr=1e-2)
+
+#         torch.manual_seed(1)
+
+#         for _ in tqdm.tqdm(range(1000)):  # converges in a reasonable time
+#             optim.zero_grad()
+
+#             # gt
+#             gt.uniform_(-1, 1)
+
+#             # input
+#             input_values = self.trilinear_kernel(gt, num_channels)
+
+#             # pred
+#             values = self.forward(input_values)
+
+#             # optimize
+#             loss = (values[input_values!=0] - gt[input_values!=0]).pow(2).sum()
+
+#             # print(loss)##测试
+
+#             loss.backward()
+#             optim.step()
+#         print(loss)
+            
+
+
+#     def trilinear_kernel(self, gt, num_channels):
+#         input_values = torch.zeros_like(gt)
+
+#         input_values[gt > 0] = (1 - (num_channels-1) * gt)[gt > 0]
+#         input_values[gt < 0] = ((num_channels-1) * gt + 1)[gt < 0]
+
+#         input_values[gt < -1.0 / (num_channels-1)] = 0
+#         input_values[gt > 1.0 / (num_channels-1)] = 0
+
+#         return input_values
+
+# 作为网络局部测试
 if __name__ == '__main__':
-    reverse_value_layer = ValueLayer_reverse(mlp_layers=[1, 100, 100, 1])
+    # reverse_value_layer = ValueLayer_reverse(mlp_layers=[1, 100, 100, 1])
     print("finish initialization")

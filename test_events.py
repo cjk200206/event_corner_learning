@@ -11,6 +11,10 @@ from torch.utils.data import default_collate
 from utils.models_new import EventCornerClassifier
 from utils.loss import cross_entropy_loss_and_accuracy
 
+"""
+    用于测试dataset和dataloader的读写状态，不是测试集
+"""
+
 #收集事件并处理，主要是处理事件长度不同的问题
 def collate_events(data): 
     last_events = []

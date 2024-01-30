@@ -127,7 +127,7 @@ class Syn_Events(Dataset):
             augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),percent=0.1)
         
         events = augmented_events[:,0:4]
-        labels = augmented_events[:,-1]
+        labels = augmented_events[:,-1].astype(int)
 
         return events,labels
 
