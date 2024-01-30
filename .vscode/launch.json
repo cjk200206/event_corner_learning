@@ -1,0 +1,45 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "train_event_corners测试",
+            "type": "python",
+            "request": "launch",
+            "program": "train_event_corners.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--validation_dataset",
+                "/remote-home/share/cjk/syn2e/datasets/test",
+                "--training_dataset",
+                "/remote-home/share/cjk/syn2e/datasets/test",
+                "--log_dir",
+                "log/modify",
+                "--device",
+                "cuda:0"
+            ]
+        },
+        {
+            "name": "网络测试",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--validation_dataset",
+                "N-Caltech101/validation/",
+                "--training_dataset",
+                "N-Caltech101/training/",
+                "--log_dir",
+                "log/modify",
+                "--device",
+                "cuda:0"
+            ]
+        }
+    ]
+}
