@@ -266,11 +266,8 @@ class AegnnEventCornerClassifier(nn.Module):
         self.quantization_layer = QuantizationLayer(voxel_dimension, mlp_layers, activation)
         self.crop_dimension = crop_dimension
         # aegnn的版本
-        self.backbone = GraphRes(syn,)
-        # replace fc layer and first convolutional layer
-        input_channels = 2*voxel_dimension[0]
-        self.backbone.conv1 = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, num_classes*4) # 这里不是结束，还要融合
+        self.backbone = GraphRes('syn',torch.tensor([9*2,224,224]),num_outputs=num_classes*4)
+        
 
         # 加入末尾点（需要探测的那个点）
         self.point_net = nn.Sequential(

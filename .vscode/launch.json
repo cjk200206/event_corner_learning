@@ -5,6 +5,8 @@
     "version": "0.2.0",
     "configurations": [
 
+    
+
         {
             "name": "train_event_corners测试",
             "type": "python",
@@ -12,6 +14,7 @@
             "program": "train_event_corners.py",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "cwd": "${workspaceFolder}",
             "args": [
                 "--validation_dataset",
                 "/remote-home/share/cjk/syn2e/datasets/test",

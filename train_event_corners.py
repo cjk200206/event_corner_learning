@@ -9,7 +9,7 @@ import numpy as np
 from utils.dataset import Syn_Events
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
-from utils.models_new import EventCornerClassifier
+from utils.models_new import EventCornerClassifier,AegnnEventCornerClassifier
 from utils.loss import cross_entropy_loss_and_accuracy
 from torch.utils.tensorboard import SummaryWriter
 
@@ -107,10 +107,11 @@ if __name__ == '__main__':
 
     # model, and put to device
     model = EventCornerClassifier()
+    # model = AegnnEventCornerClassifier()
     model = model.to(flags.device)
 
     # optimizer and lr scheduler
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.5)
 
     writer = SummaryWriter(flags.log_dir)

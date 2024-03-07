@@ -7,7 +7,7 @@ from torch_geometric.nn.conv import SplineConv
 from torch_geometric.nn.norm import BatchNorm
 from torch_geometric.transforms import Cartesian
 
-from models_aegnn.layer import MaxPooling, MaxPoolingX
+from utils.models_aegnn.layer import MaxPooling, MaxPoolingX
 
 
 class GraphRes(torch.nn.Module):
@@ -16,7 +16,7 @@ class GraphRes(torch.nn.Module):
                  bias: bool = False, root_weight: bool = False):
         super(GraphRes, self).__init__()
         assert len(input_shape) == 3, "invalid input shape, should be (img_width, img_height, dim)"
-        dim = int(input_shape[-1])
+        dim = int(input_shape[0]) #修改dim以符合AgennEventCornerClassifier的输入要求
 
         # Set dataset specific hyper-parameters.
         if dataset == "ncars":

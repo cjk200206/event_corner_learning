@@ -1,6 +1,5 @@
-import models_aegnn.layer
-import models_aegnn.networks
-from models_aegnn.recognition import RecognitionModel
+from . import networks,layer
+from .recognition import RecognitionModel
 
 ################################################################################################
 # Access functions #############################################################################

@@ -7,7 +7,7 @@ from torch_geometric.nn.conv import SplineConv
 from torch_geometric.nn.norm import BatchNorm
 from torch_geometric.transforms import Cartesian
 
-from models_aegnn.layer import MaxPooling, MaxPoolingX
+from utils.models_aegnn.layer import MaxPooling, MaxPoolingX
 
 
 class GraphWen(torch.nn.Module):
