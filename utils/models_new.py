@@ -253,7 +253,8 @@ class EventCornerClassifier(nn.Module):
         pred = self.merge_net.forward(merged_pred)
         return pred, vox
     
-    # 将aegnn网络接入，专门用于对事件角点的训练
+
+# 将aegnn网络接入，专门用于对事件角点的训练
 class AegnnEventCornerClassifier(nn.Module):
     def __init__(self,
                  voxel_dimension=(9,260,346),  # dimension of voxel will be C x 2 x H x W，生成数据集是仿DAVIS346,即（260,346）
