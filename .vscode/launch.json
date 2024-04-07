@@ -5,9 +5,11 @@
     "version": "0.2.0",
     "configurations": [
 
+
+
         {
             "name": "train_event_corners测试",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "train_event_corners.py",
             "console": "integratedTerminal",
@@ -25,7 +27,7 @@
         },
         {
             "name": "网络测试",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal",
@@ -37,8 +39,15 @@
                 "N-Caltech101/training/",
                 "--log_dir",
                 "log/modify",
+                // "--batch_size",
+                // "1",
+                // "--num_workers",
+                // "0",
+                // "--pin_memory",
+                // "True",
                 "--device",
                 "cuda:0"
+                
             ]
         }
     ]
