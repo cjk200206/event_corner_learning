@@ -143,6 +143,12 @@ class SEResNetBlock(nn.Module):
             nn.Conv2d(out_channels // 16, out_channels, kernel_size=1),
             nn.Sigmoid()
         )
+        self.downsample = None
+        if in_channels != out_channels:
+            self.downsample = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1),
+                nn.BatchNorm2d(out_channels)
+            )
         
     def forward(self, x):
         residual = x
@@ -150,9 +156,11 @@ class SEResNetBlock(nn.Module):
         out = self.relu(out)
         out = self.conv2(out)
         out = self.se(out) * out
+        if self.downsample is not None:
+            residual = self.downsample(x)
         out += residual
         out = self.relu(out)
-        return out
+        return out,residual
 
 # 定义整个网络
 class CornerHeatmap(nn.Module):
@@ -160,30 +168,30 @@ class CornerHeatmap(nn.Module):
         super(CornerHeatmap, self).__init__()
         self.se_resnet1 = SEResNetBlock(in_channels, 64)
         self.se_resnet2 = SEResNetBlock(64, 128)
-        self.conv_lstm1 = ConvLSTM(128, 256, (3,3), 2)
-        self.se_resnet3 = SEResNetBlock(256, 128)
+        self.conv_lstm1 = ConvLSTM(128, 128, (3,3), 2)
+        self.se_resnet3 = SEResNetBlock(128, 128)
         self.se_resnet4 = SEResNetBlock(128, 64)
         self.conv_lstm2 = ConvLSTM(64, 64, (3,3), 2)
         self.conv_out = nn.Conv2d(64, out_channels, kernel_size=1)
         
     def forward(self, x):
-        skip_connections = [x]
-        out = self.se_resnet1(x)
+        skip_connections = []
+        
+        out,res = self.se_resnet1(x)
+        skip_connections.append(res)
 
-        skip_connections.append(out)
-        out = self.se_resnet2(out+skip_connections[-2])
+        out,res = self.se_resnet2(out+skip_connections[-1])
+        skip_connections.append(res)
 
-        skip_connections.append(out)
-        out = self.conv_lstm1(out+skip_connections[-2])
+        out = self.conv_lstm1(out)
 
-        out = self.se_resnet3(out)
-        skip_connections.append(out+skip_connections[-2])
+        out,res = self.se_resnet3(out+skip_connections[-1])
+        skip_connections.append(res)
 
-        out = self.se_resnet4(out)
-        skip_connections.append(out+skip_connections[-2])
+        out,res = self.se_resnet4(out+skip_connections[-1])
+        skip_connections.append(res)
 
-        skip_connections.append(out)
-        out = self.conv_lstm2(out+skip_connections[-2])
+        out = self.conv_lstm2(out)
 
         out = self.conv_out(out+skip_connections[-1])
         return out
@@ -191,7 +199,7 @@ class CornerHeatmap(nn.Module):
 #参照stable keypoint,使用角点heatmap
 class EventCornerHeatmap(nn.Module):
     def __init__(self,
-                 voxel_dimension=(9,260,346),  # dimension of voxel will be C x 2 x H x W，生成数据集是仿DAVIS346,即（260,246）
+                 voxel_dimension=(10,260,346),  # dimension of voxel will be C x 2 x H x W，生成数据集是仿DAVIS346,即（260,246）
                  crop_dimension=(224, 224),  # dimension of crop before it goes into classifier
                  num_classes=2,
                  mlp_layers=[1, 30, 30, 1],
@@ -200,25 +208,28 @@ class EventCornerHeatmap(nn.Module):
         nn.Module.__init__(self)
         self.quantization_layer = QuantizationLayer(voxel_dimension, mlp_layers, activation)
         self.crop_dimension = crop_dimension
-        self.backbone = CornerHeatmap(2*voxel_dimension,voxel_dimension)
+        self.backbone = CornerHeatmap(voxel_dimension[0],voxel_dimension[0])
     
-    def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
-        B, C, H, W = x.shape
-        if H > W:
-            h = H // 2
-            x = x[:, :, h - W // 2:h + W // 2, :]
-        else:
-            h = W // 2
-            x = x[:, :, :, h - H // 2:h + H // 2]
+    # def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
+    #     B, C, H, W = x.shape
+    #     if H > W:
+    #         h = H // 2
+    #         x = x[:, :, h - W // 2:h + W // 2, :]
+    #     else:
+    #         h = W // 2
+    #         x = x[:, :, :, h - H // 2:h + H // 2]
 
-        x = F.interpolate(x, size=output_resolution)
+    #     x = F.interpolate(x, size=output_resolution)
 
-        return x
+    #     return x
 
     def forward(self, x):
-        vox = self.quantization_layer.forward(x)
-        vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
-        pred = self.backbone.forward(vox_cropped)
+        # vox = self.quantization_layer.forward(x)
+
+        # 输入就是固定的vox
+        vox = x
+        # vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
+        pred = self.backbone.forward(vox)
 
         return pred, vox
 

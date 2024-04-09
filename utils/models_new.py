@@ -187,7 +187,7 @@ class Classifier(nn.Module):
 #专门用于对事件角点的训练
 class EventCornerClassifier(nn.Module):
     def __init__(self,
-                 voxel_dimension=(9,260,346),  # dimension of voxel will be C x 2 x H x W，生成数据集是仿DAVIS346,即（260,246）
+                 voxel_dimension=(9,260,346),  # dimension of voxel will be C x 2 x H x W，生成数据集是仿DAVIS346,即（260,346）
                  crop_dimension=(224, 224),  # dimension of crop before it goes into classifier
                  num_classes=2,
                  mlp_layers=[1, 30, 30, 1],

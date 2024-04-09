@@ -59,7 +59,7 @@ def FLAGS():
     # training / validation dataset
     parser.add_argument("--validation_dataset", default="/remote-home/share/cjk/syn2e/datasets/val")
     parser.add_argument("--training_dataset", default="/remote-home/share/cjk/syn2e/datasets/train")
-    parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
+    # parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
     # logging options
     parser.add_argument("--log_dir", default="log/events_corner")
 
@@ -77,7 +77,7 @@ def FLAGS():
     assert os.path.isdir(dirname(flags.log_dir)), f"Log directory root {dirname(flags.log_dir)} not found."
     assert os.path.isdir(flags.validation_dataset), f"Validation dataset directory {flags.validation_dataset} not found."
     assert os.path.isdir(flags.training_dataset), f"Training dataset directory {flags.training_dataset} not found."
-    assert os.path.isdir(flags.test_dataset), f"Test dataset directory {flags.training_dataset} not found."
+    # assert os.path.isdir(flags.test_dataset), f"Test dataset directory {flags.training_dataset} not found."
 
     print(f"----------------------------\n"
           f"Starting training with \n"
@@ -87,13 +87,13 @@ def FLAGS():
           f"log_dir: {flags.log_dir}\n"
           f"training_dataset: {flags.training_dataset}\n"
           f"validation_dataset: {flags.validation_dataset}\n"
-          f"test_dataset: {flags.test_dataset}\n"
+        #   f"test_dataset: {flags.test_dataset}\n"
           f"----------------------------")
 
     return flags
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
+    # os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
     flags = FLAGS()
     # datasets, add augmentation to training set
     training_dataset = Syn_Events(flags.training_dataset,)
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     min_validation_loss = 1000
 
 
-for i in range(flags.num_epochs):
+    for i in range(flags.num_epochs):
         sum_accuracy = 0
         sum_loss = 0
         model = model.eval()
