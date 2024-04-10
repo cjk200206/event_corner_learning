@@ -210,26 +210,24 @@ class EventCornerHeatmap(nn.Module):
         self.crop_dimension = crop_dimension
         self.backbone = CornerHeatmap(voxel_dimension[0],voxel_dimension[0])
     
-    # def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
-    #     B, C, H, W = x.shape
-    #     if H > W:
-    #         h = H // 2
-    #         x = x[:, :, h - W // 2:h + W // 2, :]
-    #     else:
-    #         h = W // 2
-    #         x = x[:, :, :, h - H // 2:h + H // 2]
+    def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
+        B, C, H, W = x.shape
+        if H > W:
+            h = H // 2
+            x = x[:, :, h - W // 2:h + W // 2, :]
+        else:
+            h = W // 2
+            x = x[:, :, :, h - H // 2:h + H // 2]
 
-    #     x = F.interpolate(x, size=output_resolution)
+        x = F.interpolate(x, size=output_resolution)
 
-    #     return x
+        return x
 
     def forward(self, x):
-        # vox = self.quantization_layer.forward(x)
-
         # 输入就是固定的vox
         vox = x
-        # vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
-        pred = self.backbone.forward(vox)
+        vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
+        pred = self.backbone.forward(vox_cropped)
 
         return pred, vox
 

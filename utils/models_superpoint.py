@@ -116,7 +116,7 @@ class SuperPointNet(torch.nn.Module):
         return output
 
 #参照eventpoint,使用superpoint类
-class EventCornerHeatmap(nn.Module):
+class EventCornerSuperpoint(nn.Module):
     def __init__(self,
                  voxel_dimension=(10,260,346),  # dimension of voxel will be C x 2 x H x W，生成数据集是仿DAVIS346,即（260,246）
                  crop_dimension=(224, 224),  # dimension of crop before it goes into classifier
@@ -125,16 +125,30 @@ class EventCornerHeatmap(nn.Module):
                  activation=nn.LeakyReLU(negative_slope=0.1)
                  ):
         nn.Module.__init__(self)
-        self.backbone = SuperPointNet(voxel_dimension[0],voxel_dimension[0])
+        self.backbone = SuperPointNet()
+        self.crop_dimension = crop_dimension
     
+    def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
+        B, C, H, W = x.shape
+        if H > W:
+            h = H // 2
+            x = x[:, :, h - W // 2:h + W // 2, :]
+        else:
+            h = W // 2
+            x = x[:, :, :, h - H // 2:h + H // 2]
+
+        x = F.interpolate(x, size=output_resolution)
+
+        return x
+
 
     def forward(self, x):
         # vox = self.quantization_layer.forward(x)
 
         # 输入就是固定的vox
         vox = x
-        # vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
-        pred = self.backbone.forward(vox)
+        vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
+        pred = self.backbone.forward(vox_cropped)
 
         return pred, vox
 

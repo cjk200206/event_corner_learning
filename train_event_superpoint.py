@@ -7,12 +7,12 @@ import os
 import numpy as np
 import torch.nn.functional as F
 
-from utils.dataset import Syn_Events
-from utils.dataset import Syn_Heatmaps
+from utils.dataset import Syn_Superpoint
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
-from utils.models_heatmap import EventCornerHeatmap
-from utils.loss import cross_entropy_loss_and_accuracy,compute_vox_loss
+from utils.models_superpoint import EventCornerSuperpoint
+from utils.loss import compute_vox_loss,compute_superpoint_loss
+from utils.utils.d2s import DepthToSpace,SpaceToDepth
 from torch.utils.tensorboard import SummaryWriter
 
 def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
@@ -28,6 +28,44 @@ def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
 
     return x
 
+#superpoint的标签获取
+def labels2Dto3D_flattened(labels, cell_size):
+    '''
+    Change the shape of labels into 3D. Batch of labels.
+
+    :param labels:
+        tensor [batch_size, 1, H, W]
+        keypoint map.
+    :param cell_size:
+        8
+    :return:
+         labels: tensors[batch_size, 65, Hc, Wc]
+    '''
+    batch_size, channel, H, W = labels.shape
+    Hc, Wc = H // cell_size, W // cell_size
+    space2depth = SpaceToDepth(8)
+    labels = space2depth(labels)
+
+    dustbin = torch.ones((batch_size, 1, Hc, Wc)).cuda()
+    labels = torch.cat((labels.cuda()*2, dustbin.view(batch_size, 1, Hc, Wc)), dim=1)
+    labels = torch.argmax(labels, dim=1)
+    return labels
+
+#superpoint的标签获取
+def getLabels(labels_2D, cell_size, device="cpu"):
+    """
+    # transform 2D labels to 3D shape for training
+    :param labels_2D:
+    :param cell_size:
+    :param device:
+    :return:
+    """
+    labels3D_flattened = labels2Dto3D_flattened(
+        labels_2D.to(device), cell_size=cell_size
+    )
+    labels3D_in_loss = labels3D_flattened
+    return labels3D_in_loss
+
 def FLAGS():
     parser = argparse.ArgumentParser("""Train classifier using a learnt quantization layer.""")
 
@@ -36,7 +74,7 @@ def FLAGS():
     parser.add_argument("--training_dataset", default="/remote-home/share/cjk/syn2e/datasets/train")
     # parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
     # logging options
-    parser.add_argument("--log_dir", default="log/events_corner")
+    parser.add_argument("--log_dir", default="log/superpoint")
 
     # loader and device options
     parser.add_argument("--device", default="cuda:0")
@@ -71,8 +109,8 @@ if __name__ == '__main__':
     # os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
     flags = FLAGS()
     # datasets, add augmentation to training set
-    training_dataset = Syn_Heatmaps(flags.training_dataset,num_time_bins=10,grid_size=(260,346))
-    validation_dataset = Syn_Heatmaps(flags.validation_dataset,num_time_bins=10,grid_size=(260,346))
+    training_dataset = Syn_Superpoint(flags.training_dataset,num_time_bins=3,grid_size=(260,346))
+    validation_dataset = Syn_Superpoint(flags.validation_dataset,num_time_bins=3,grid_size=(260,346))
 
     # construct loader, handles data streaming to gpu
     training_loader = DataLoader(training_dataset,batch_size=flags.batch_size,
@@ -81,11 +119,11 @@ if __name__ == '__main__':
                                pin_memory=flags.pin_memory,collate_fn=default_collate)
 
     # model, and put to device
-    model = EventCornerHeatmap(voxel_dimension=(10,260,346))
+    model = EventCornerSuperpoint(voxel_dimension=(2,260,346))
     model = model.to(flags.device)
 
     # optimizer and lr scheduler
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.5)
 
     writer = SummaryWriter(flags.log_dir)
@@ -93,25 +131,26 @@ if __name__ == '__main__':
     iteration = 0
     min_validation_loss = 1000
 
-
     for i in range(flags.num_epochs):
         # val
         sum_accuracy = 0
         sum_loss = 0
         model = model.eval()
-
         print(f"Validation step [{i:3d}/{flags.num_epochs:3d}]")
+        
         for event_vox,label_vox,heatmap in tqdm.tqdm(validation_loader):
             heatmap = crop_and_resize_to_resolution(heatmap)
-            
+            label_vox = crop_and_resize_to_resolution(label_vox)
             # 把数据转到gpu
             event_vox = event_vox.to(flags.device)
             label_vox = label_vox.to(flags.device)
             heatmap = heatmap.to(flags.device)
+            #转换标签
+            label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
             
             with torch.no_grad():
-                pred, vox = model(event_vox)
-                loss, accuracy = compute_vox_loss(pred, heatmap)
+                semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
+                loss, accuracy = compute_superpoint_loss(semi, label_3d)
 
             sum_accuracy += accuracy
             sum_loss += loss
@@ -146,21 +185,24 @@ if __name__ == '__main__':
         # train
         sum_accuracy = 0
         sum_loss = 0
-
         model = model.train()
         print(f"Training step [{i:3d}/{flags.num_epochs:3d}]")
+
         for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
-            # heatmap = crop_and_resize_to_resolution(heatmap)
+            heatmap = crop_and_resize_to_resolution(heatmap)
+            label_vox = crop_and_resize_to_resolution(label_vox)
             # 把数据转到gpu
             event_vox = event_vox.to(flags.device)
             label_vox = label_vox.to(flags.device)
             heatmap = heatmap.to(flags.device)
             optimizer.zero_grad()
+            #转换标签
+            label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
 
-            pred, vox = model(event_vox)
-            with torch.autograd.detect_anomaly():
-                loss, accuracy = compute_vox_loss(pred, heatmap)
-                loss.backward()
+            semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
+            # with torch.autograd.detect_anomaly():
+            loss, accuracy = compute_superpoint_loss(semi, label_3d)
+            loss.backward()
 
             optimizer.step()
 

@@ -216,6 +216,68 @@ class Syn_Heatmaps(Dataset):
 
         return event_vox, label_vox, heatmap
 
+class Syn_Superpoint(Dataset):
+    """
+        syn_corner数据集通过syn2e建立,具体格式如下：
+        /datasets
+            /train
+                /syn_polygon
+                    /augmented_events
+                        /0
+                            /0000000000.txt
+                            /0000000001.txt
+                            /others
+                        /1
+                        /2
+                        /others
+                    /event_corners
+                    /events
+                    /others
+                /syn_mutiple_polygons
+                /others
+            /val
+    """
+    def __init__(self,root,event_crop = True,num_time_bins = 10,grid_size=(260, 346)): #这里的root从/train或者/val开始
+        self.events_paths = [] # e.g. /datasets/train/syn_polygon/events/0
+        self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
+        self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
+        self.event_crop = event_crop # 决定是否需要裁剪事件片段
+        self.num_time_bins = num_time_bins
+        self.grid_size = grid_size
+
+        for path, dirs, files in os.walk(root):
+            if path.split('/')[-1] == 'augmented_events':
+                for dir in sorted(dirs): # 加入文件夹/0 -> /100
+                    self.events_paths.append(join(path,dir))
+                    for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
+                        self.events_files.append(join(path,dir,file))
+            else:
+                continue
+    
+    def __len__(self):
+        return len(self.events_files)
+    
+    def __getitem__(self, idx):
+        """
+        returns events and event_corners, load from txts
+        :param idx:
+        :return: x,y,t,p  label
+        """
+        e_f = self.events_files[idx]
+        augmented_events = np.loadtxt(e_f).astype(np.float32)
+
+        #决定要不要裁剪
+        if self.event_crop:
+            augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),percent=0.5)
+        
+        #将事件转换到vox和heatmap
+        event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
+        # #原始的事件和label
+        # events = augmented_events[:,0:4]
+        # labels = augmented_events[:,-1].astype(int)
+
+        return event_vox, label_vox, heatmap
+
 if __name__ =='__main__':
     dataset_root = "/remote-home/share/cjk/syn2e/datasets"
     train_root = join(dataset_root,"train")

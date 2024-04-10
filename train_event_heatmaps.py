@@ -150,7 +150,8 @@ if __name__ == '__main__':
         model = model.train()
         print(f"Training step [{i:3d}/{flags.num_epochs:3d}]")
         for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
-            # heatmap = crop_and_resize_to_resolution(heatmap)
+            heatmap = crop_and_resize_to_resolution(heatmap)
+            
             # 把数据转到gpu
             event_vox = event_vox.to(flags.device)
             label_vox = label_vox.to(flags.device)
