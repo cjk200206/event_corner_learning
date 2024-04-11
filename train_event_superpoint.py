@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
 from utils.loss import compute_vox_loss,compute_superpoint_loss
-from utils.utils.d2s import DepthToSpace,SpaceToDepth
+from utils.utils.utils import getLabels
 from torch.utils.tensorboard import SummaryWriter
 
 def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
@@ -27,44 +27,6 @@ def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
     x = F.interpolate(x, size=output_resolution)
 
     return x
-
-#superpoint的标签获取
-def labels2Dto3D_flattened(labels, cell_size):
-    '''
-    Change the shape of labels into 3D. Batch of labels.
-
-    :param labels:
-        tensor [batch_size, 1, H, W]
-        keypoint map.
-    :param cell_size:
-        8
-    :return:
-         labels: tensors[batch_size, 65, Hc, Wc]
-    '''
-    batch_size, channel, H, W = labels.shape
-    Hc, Wc = H // cell_size, W // cell_size
-    space2depth = SpaceToDepth(8)
-    labels = space2depth(labels)
-
-    dustbin = torch.ones((batch_size, 1, Hc, Wc)).cuda()
-    labels = torch.cat((labels.cuda()*2, dustbin.view(batch_size, 1, Hc, Wc)), dim=1)
-    labels = torch.argmax(labels, dim=1)
-    return labels
-
-#superpoint的标签获取
-def getLabels(labels_2D, cell_size, device="cpu"):
-    """
-    # transform 2D labels to 3D shape for training
-    :param labels_2D:
-    :param cell_size:
-    :param device:
-    :return:
-    """
-    labels3D_flattened = labels2Dto3D_flattened(
-        labels_2D.to(device), cell_size=cell_size
-    )
-    labels3D_in_loss = labels3D_flattened
-    return labels3D_in_loss
 
 def FLAGS():
     parser = argparse.ArgumentParser("""Train classifier using a learnt quantization layer.""")
@@ -154,9 +116,12 @@ if __name__ == '__main__':
 
             sum_accuracy += accuracy
             sum_loss += loss
-
-        validation_loss = sum_loss.item() / len(validation_loader)
-        validation_accuracy = sum_accuracy / len(validation_loader)
+        if len(validation_loader) != 0:
+            validation_loss = sum_loss.item() / len(validation_loader)
+            validation_accuracy = sum_accuracy / len(validation_loader)
+        else:
+            validation_loss = min_validation_loss
+            validation_accuracy = 0
         print(f"Validation Loss {validation_loss:.4f}  Accuracy {validation_accuracy:.4f}")
 
         writer.add_scalar("validation/accuracy", validation_accuracy, iteration)
@@ -213,9 +178,12 @@ if __name__ == '__main__':
 
         if i % 10 == 9:
             lr_scheduler.step()
-
-        training_loss = sum_loss.item() / len(training_loader)
-        training_accuracy = sum_accuracy / len(training_loader)
+        if len(training_loader) != 0:
+            training_loss = sum_loss.item() / len(training_loader)
+            training_accuracy = sum_accuracy / len(training_loader)
+        else:
+            training_loss = min_validation_loss
+            training_accuracy = 0
         print(f"Training Iteration {iteration:5d}  Loss {training_loss:.4f}  Accuracy {training_accuracy:.4f}")
 
         writer.add_scalar("training/accuracy", training_accuracy, iteration)

@@ -75,9 +75,9 @@ def compute_vox_loss(vox, heatmap):
     return loss,acc.item()
 
 
-def compute_superpoint_loss(vox, label_3d):
+def compute_superpoint_argmax_loss(vox, label_3d):
     """
-    计算损失函数
+    计算损失函数，标签是argmax过后的idx形状
     :param vox: superpoint网络输出，形状为 (batch_size, 64+1, height/8, width/8)
     :param heatmap: heatmap，与vox尺寸相同，形状为 (batch_size, 64+1, height/8, width/8)
     :return: 损失值
@@ -104,6 +104,37 @@ def compute_superpoint_loss(vox, label_3d):
     # 计算真实的类别
     true_classes = label_3d
     
+    acc = accuracy(predicted_classes.cpu().view(-1), true_classes.cpu().view(-1))
+    
+    return loss,acc.item()
+
+def compute_superpoint_loss(vox, label_3d):
+    """
+    计算损失函数
+    :param vox: superpoint网络输出，形状为 (batch_size, 64+1, height/8, width/8)
+    :param heatmap: heatmap，与vox尺寸相同，形状为 (batch_size, 64+1, height/8, width/8)
+    :return: 损失值
+    """
+
+    # 将softmax_vox和heatmap展平为二维张量，以便与交叉熵损失函数进行计算
+    batch_size = vox.size(0)
+    softmaxed_vox = F.softmax(vox,dim=1)
+
+    # 计算交叉熵损失
+    loss = 0
+    acc = 0
+    accuracy = torchmetrics.Accuracy()
+    bce_loss = torch.nn.BCELoss()
+    focal_loss = FocalLoss()
+    for i in range(batch_size):
+        # loss += bce_loss(softmaxed_vox[i].cpu().view(65,-1).permute(1,0), label_3d[i].cpu().view(65,-1).permute(1,0))
+        loss += focal_loss(softmaxed_vox[i].cpu().view(65,-1).permute(1,0), label_3d[i].cpu().view(65,-1).permute(1,0))
+    loss /= batch_size
+
+    # 计算预测的类别
+    predicted_classes = torch.argmax(softmaxed_vox, dim=1)
+    # 计算真实的类别
+    true_classes = torch.argmax(label_3d,dim=1)
     acc = accuracy(predicted_classes.cpu().view(-1), true_classes.cpu().view(-1))
     
     return loss,acc.item()

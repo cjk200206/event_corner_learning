@@ -4,6 +4,7 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "test_event_superpoint测试",
             "type": "debugpy",
@@ -15,9 +16,11 @@
                 "--test_dataset",
                 "/home/cjk2002/code/syn2e/datasets/test",
                 "--checkpoint",
-                "log/superpoint_ckpt/model_best.pth",
+                "log/superpoint_ckpt/superpoint_04111626.pth",
+                // "log/superpoint_ckpt/superPointNet_100000_checkpoint.pth.tar",
+                // "log/superpoint_ckpt/superpoint_v1.pth",
                 "--output_path",
-                "/home/cjk2002/code/event_code/event_corner_learning/log/pics",
+                "/home/cjk2002/code/event_code/event_corner_learning/log",
                 "--device",
                 "cuda:0",
                 "--batch_size",
@@ -33,9 +36,9 @@
             "justMyCode": true,
             "args": [
                 "--validation_dataset",
-                "syn/val",
+                "/home/cjk2002/code/event_code/event_corner_learning/syn/val",
                 "--training_dataset",
-                "syn/val",
+                "/home/cjk2002/code/event_code/event_corner_learning/syn/train",
                 "--log_dir",
                 "log/superpoint",
                 "--device",

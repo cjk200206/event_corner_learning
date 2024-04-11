@@ -123,7 +123,7 @@ class Syn_Events(Dataset):
         self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
         self.event_crop = event_crop # 决定是否需要裁剪事件片段
 
-        for path, dirs, files in os.walk(root):
+        for path, dirs, files in os.walk(root,followlinks=True):
             if path.split('/')[-1] == 'augmented_events':
                 for dir in sorted(dirs): # 加入文件夹/0 -> /100
                     self.events_paths.append(join(path,dir))
@@ -183,7 +183,7 @@ class Syn_Heatmaps(Dataset):
         self.num_time_bins = num_time_bins
         self.grid_size = grid_size
 
-        for path, dirs, files in os.walk(root):
+        for path, dirs, files in os.walk(root,followlinks=True):
             if path.split('/')[-1] == 'augmented_events':
                 for dir in sorted(dirs): # 加入文件夹/0 -> /100
                     self.events_paths.append(join(path,dir))
@@ -245,7 +245,7 @@ class Syn_Superpoint(Dataset):
         self.num_time_bins = num_time_bins
         self.grid_size = grid_size
 
-        for path, dirs, files in os.walk(root):
+        for path, dirs, files in os.walk(root,followlinks=True):
             if path.split('/')[-1] == 'augmented_events':
                 for dir in sorted(dirs): # 加入文件夹/0 -> /100
                     self.events_paths.append(join(path,dir))

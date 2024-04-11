@@ -43,3 +43,16 @@ class SpaceToDepth(nn.Module):
         output = output.permute(0, 3, 1, 2)
         return output
 
+#superpoint恢复到热力图
+def flatten_64to1(semi, cell_size=8):
+    """
+    input: 
+        semi: tensor[batch, cell_size*cell_size, Hc, Wc]
+        (Hc = H/8)
+    outpus:
+        heatmap: tensor[batch, 1, H, W]
+    """
+
+    depth2space = DepthToSpace(cell_size)
+    heatmap = depth2space(semi)
+    return heatmap
