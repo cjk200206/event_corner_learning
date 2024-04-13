@@ -88,15 +88,17 @@ def compute_superpoint_argmax_loss(vox, label_3d):
 
 
     softmaxed_vox = F.softmax(vox,dim=1)
-
+    label_3d = torch.argmax(label_3d,dim=1)
 
     # 计算交叉熵损失
     loss = 0
     acc = 0
     accuracy = torchmetrics.Accuracy()
     focal_loss = FocalLoss()
+    cse_loss = torch.nn.CrossEntropyLoss()
     for i in range(batch_size):
-        loss += focal_loss(softmaxed_vox[i].view(65,-1).permute(1,0), label_3d[i].view(-1))
+        # loss += cse_loss(softmaxed_vox[i].cpu().view(65,-1).permute(1,0), label_3d[i].cpu().view(-1))
+        loss += focal_loss(softmaxed_vox[i].view(65,-1).permute(1,0).cpu(), label_3d[i].view(-1).cpu())
     loss /= batch_size
 
     # 计算预测的类别
@@ -124,11 +126,12 @@ def compute_superpoint_loss(vox, label_3d):
     loss = 0
     acc = 0
     accuracy = torchmetrics.Accuracy()
-    bce_loss = torch.nn.BCELoss()
+    bce_loss = torch.nn.BCELoss(reduction="none")
+    shape = vox.shape[2]*vox.shape[3]
     focal_loss = FocalLoss()
     for i in range(batch_size):
-        # loss += bce_loss(softmaxed_vox[i].cpu().view(65,-1).permute(1,0), label_3d[i].cpu().view(65,-1).permute(1,0))
-        loss += focal_loss(softmaxed_vox[i].cpu().view(65,-1).permute(1,0), label_3d[i].cpu().view(65,-1).permute(1,0))
+        loss += bce_loss(softmaxed_vox[i].cpu(), label_3d[i].cpu()).sum()/shape ###????????相当于是所有3d格子求和，再对特征图的面积求平均
+        # loss += focal_loss(softmaxed_vox[i].cpu().view(65,-1).permute(1,0), label_3d[i].cpu().view(65,-1).permute(1,0))
     loss /= batch_size
 
     # 计算预测的类别

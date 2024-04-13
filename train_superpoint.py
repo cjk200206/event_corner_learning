@@ -7,7 +7,7 @@ import os
 import numpy as np
 import torch.nn.functional as F
 
-from utils.dataset import Syn_Superpoint
+from utils.dataset import Syn_Superpoint,Pic_Superpoint
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
@@ -71,8 +71,8 @@ if __name__ == '__main__':
     # os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
     flags = FLAGS()
     # datasets, add augmentation to training set
-    training_dataset = Syn_Superpoint(flags.training_dataset,num_time_bins=1,grid_size=(260,346),event_crop=False)
-    validation_dataset = Syn_Superpoint(flags.validation_dataset,num_time_bins=1,grid_size=(260,346),event_crop=False)
+    training_dataset = Pic_Superpoint(flags.training_dataset,num_time_bins=10,grid_size=(260,346))
+    validation_dataset = Pic_Superpoint(flags.validation_dataset,num_time_bins=10,grid_size=(260,346))
 
     # construct loader, handles data streaming to gpu
     training_loader = DataLoader(training_dataset,batch_size=flags.batch_size,
@@ -100,20 +100,15 @@ if __name__ == '__main__':
         model = model.eval()
         print(f"Validation step [{i:3d}/{flags.num_epochs:3d}]")
         
-        for event_vox,label_vox,heatmap in tqdm.tqdm(validation_loader):
-            heatmap = crop_and_resize_to_resolution(heatmap)
-            label_vox = crop_and_resize_to_resolution(label_vox)
+        for img,label in tqdm.tqdm(validation_loader):
+            label = crop_and_resize_to_resolution(label.unsqueeze(1))
             # 把数据转到gpu
-            event_vox = event_vox.to(flags.device)
-            label_vox = label_vox.to(flags.device)
-            heatmap = heatmap.to(flags.device)
+            img = img.to(flags.device)/255
+            label = label.to(flags.device)
             #转换标签
-            # rand_idx= np.random.randint(0,10)
-            # label_3d = getLabels(label_vox[:,rand_idx,:,:].unsqueeze(1),8)
-            label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
+            label_3d = getLabels(label,8)
             with torch.no_grad():
-                # semi, _ = model(event_vox[:,rand_idx,:,:].unsqueeze(1))
-                semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
+                semi, _ = model(img.unsqueeze(1).to(torch.float))
                 loss, accuracy = compute_superpoint_loss(semi, label_3d)
                 # loss, accuracy = compute_superpoint_argmax_loss(semi, label_3d)
 
@@ -142,7 +137,7 @@ if __name__ == '__main__':
             }, "log/model_best.pth")
             print("New best at ", validation_loss)
 
-        if i % flags.save_every_n_epochs == 0:
+        if (i+1) % flags.save_every_n_epochs == 0:
             state_dict = model.state_dict()
             torch.save({
                 "state_dict": state_dict,
@@ -156,21 +151,17 @@ if __name__ == '__main__':
         model = model.train()
         print(f"Training step [{i:3d}/{flags.num_epochs:3d}]")
 
-        for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
-            heatmap = crop_and_resize_to_resolution(heatmap)
-            label_vox = crop_and_resize_to_resolution(label_vox)
+        for img,label in tqdm.tqdm(training_loader):
+            label = crop_and_resize_to_resolution(label.unsqueeze(1))
             # 把数据转到gpu
-            event_vox = event_vox.to(flags.device)
-            label_vox = label_vox.to(flags.device)
-            heatmap = heatmap.to(flags.device)
+            img = img.to(flags.device)/255
+            label = label.to(flags.device)
+
             optimizer.zero_grad()
 
             #转换标签,随机挑一个切片
-            # rand_idx= np.random.randint(0,10)
-            # label_3d = getLabels(label_vox[:,rand_idx,:,:].unsqueeze(1),8)
-            # semi, _ = model(event_vox[:,rand_idx,:,:].unsqueeze(1))
-            label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
-            semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
+            label_3d = getLabels(label,8)
+            semi, _ = model(img.unsqueeze(1).to(torch.float))
             # with torch.autograd.detect_anomaly():
             loss, accuracy = compute_superpoint_loss(semi, label_3d)
             # loss, accuracy = compute_superpoint_argmax_loss(semi, label_3d)

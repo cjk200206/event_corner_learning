@@ -4,6 +4,7 @@ from os.path import join
 import os
 import torch 
 from torch.utils.data import Dataset
+import cv2
 
 def random_shift_events(events, max_shift=20, resolution=(180, 240)):
     H, W = resolution
@@ -60,6 +61,18 @@ def events_to_vox_and_heatmap(events, num_time_bins=10, grid_size=(260, 346)):
             heatmap[i, y_idx, x_idx] = 1
 
     return vox,label_vox,heatmap
+
+#构建img的label
+def corner_to_heatmap(label, grid_size=(260, 346)):
+    heatmap = torch.zeros(grid_size)
+
+    mask = (label[:,0]<346) & (label[:,0]>=0) & (label[:,1]<260) & (label[:,1]>=0 )
+
+    x_indices = label[mask,0].astype(int)
+    y_indices = label[mask,1].astype(int)
+    heatmap[y_indices, x_indices] = 1
+
+    return heatmap
 
 
 class NCaltech101:
@@ -277,6 +290,81 @@ class Syn_Superpoint(Dataset):
         # labels = augmented_events[:,-1].astype(int)
 
         return event_vox, label_vox, heatmap
+
+
+#临时修改成图片
+class Pic_Superpoint(Dataset):
+    """
+        syn_corner数据集通过syn2e建立,具体格式如下：
+        /datasets
+            /train
+                /syn_polygon
+                    /augmented_events
+                        /0
+                            /0000000000.txt
+                            /0000000001.txt
+                            /others
+                        /1
+                        /2
+                        /others
+                    /event_corners
+                    /events
+                    /others
+                /syn_mutiple_polygons
+                /others
+            /val
+    """
+    def __init__(self,root,event_crop = True,num_time_bins = 10,grid_size=(260, 346)): #这里的root从/train或者/val开始
+        self.img_paths = [] # e.g. /datasets/train/syn_polygon/events/0
+        self.corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
+        self.img_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
+        self.corners_files = [] # e.g. /datasets/train/syn_polygon/event_corners/0
+        self.event_crop = event_crop # 决定是否需要裁剪事件片段
+        self.num_time_bins = num_time_bins
+        self.grid_size = grid_size
+
+        for path, dirs, files in os.walk(root,followlinks=True):
+            if path.split('/')[-1] == 'img':
+                for dir in sorted(dirs): # 加入文件夹/0 -> /100
+                    self.img_paths.append(join(path,dir))
+                    for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
+                        self.img_files.append(join(path,dir,file))
+            elif path.split('/')[-1] == 'points':
+                for dir in sorted(dirs): # 加入文件夹/0 -> /100
+                    self.corners_paths.append(join(path,dir))
+                    for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
+                        self.corners_files.append(join(path,dir,file))
+            else:
+                continue
+    
+    def __len__(self):
+        return len(self.img_files)
+    
+    def __getitem__(self, idx):
+        """
+        returns events and event_corners, load from txts
+        :param idx:
+        :return: x,y,t,p  label
+        """
+        img_file = self.img_files[idx]
+        img = cv2.imread(img_file,cv2.IMREAD_GRAYSCALE)
+        img = np.array(img)
+        corner_file = self.corners_files[idx]
+        corner = np.loadtxt(corner_file).astype(np.float32)
+
+        #决定要不要裁剪
+        # if self.event_crop:
+            # augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),percent=0.5)
+        
+        #将事件转换到vox和heatmap
+        # event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
+        # #原始的事件和label
+        # events = augmented_events[:,0:4]
+        # labels = augmented_events[:,-1].astype(int)
+
+        heatmap = corner_to_heatmap(corner)
+
+        return img, heatmap
 
 if __name__ =='__main__':
     dataset_root = "/remote-home/share/cjk/syn2e/datasets"

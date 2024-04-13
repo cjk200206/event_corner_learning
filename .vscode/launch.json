@@ -4,6 +4,50 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        {
+            "name": "train_superpoint测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "train_superpoint.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--validation_dataset",
+                "/home/cjk2002/code/event_code/event_corner_learning/syn/val",
+                "--training_dataset",
+                "/home/cjk2002/code/event_code/event_corner_learning/syn/train",
+                "--log_dir",
+                "log/superpoint",
+                "--device",
+                "cuda:0",
+                "--batch_size",
+                "2"
+            ]
+        },
+        {
+            "name": "test_superpoint测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "test_superpoint.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--test_dataset",
+                "/home/cjk2002/code/syn2e/datasets/val",
+                "--checkpoint",
+                // "log/superpoint_ckpt/superpoint_04131627.pth",
+                // "log/superpoint_ckpt/checkpoint_08700_3.2319.pth",
+                "log/superpoint_ckpt/model_best.pth",
+                // "log/superpoint_ckpt/superPointNet_608_checkpoint.pth.tar",
+                // "log/superpoint_ckpt/superpoint_v1.pth",
+                "--output_path",
+                "/home/cjk2002/code/event_code/event_corner_learning/log",
+                "--device",
+                "cuda:0",
+                "--batch_size",
+                "2"
+            ]
+        },
 
         {
             "name": "test_event_superpoint测试",
@@ -14,11 +58,11 @@
             "justMyCode": true,
             "args": [
                 "--test_dataset",
-                "/home/cjk2002/code/syn2e/datasets/test",
+                "/home/cjk2002/code/syn2e/datasets/val",
                 "--checkpoint",
-                "log/superpoint_ckpt/superpoint_04111626.pth",
-                // "log/superpoint_ckpt/superPointNet_100000_checkpoint.pth.tar",
+                "log/superpoint_ckpt/superpoint_04132030.pth",
                 // "log/superpoint_ckpt/superpoint_v1.pth",
+                // "log/superpoint_ckpt/model_best.pth",
                 "--output_path",
                 "/home/cjk2002/code/event_code/event_corner_learning/log",
                 "--device",
@@ -40,7 +84,7 @@
                 "--training_dataset",
                 "/home/cjk2002/code/event_code/event_corner_learning/syn/train",
                 "--log_dir",
-                "log/superpoint",
+                "log/event_superpoint",
                 "--device",
                 "cuda:0",
                 "--batch_size",
