@@ -62,6 +62,21 @@ def events_to_vox_and_heatmap(events, num_time_bins=10, grid_size=(260, 346)):
 
     return vox,label_vox,heatmap
 
+#无增强角点标记的事件数据，转化成vox
+def events_to_vox(events, num_time_bins=10, grid_size=(260, 346)):
+    vox = torch.zeros((num_time_bins, *grid_size))
+    time_bins = np.linspace(events[:, 2].min(), events[:, 2].max(), num=num_time_bins+1)
+
+    for i in range(num_time_bins):
+        mask = (events[:, 2] >= time_bins[i]) & (events[:, 2] < time_bins[i + 1])
+        event_subset = events[mask]
+        x_indices = event_subset[:, 0].astype(int)
+        y_indices = event_subset[:, 1].astype(int)
+        vox[i, y_indices, x_indices] = 1
+
+    return vox
+
+
 #构建img的label
 def corner_to_heatmap(label, grid_size=(260, 346)):
     heatmap = torch.zeros(grid_size)
@@ -108,6 +123,45 @@ class NCaltech101:
 
         return events, label
     
+class NCaltech101_Superpoint:
+    def __init__(self, root, event_crop=False,num_time_bins = 10,grid_size=(260,346)):
+        self.classes = listdir(root)
+
+        self.files = []
+        self.labels = []
+
+        self.event_crop = event_crop # 决定是否需要裁剪事件片段
+        self.num_time_bins = num_time_bins
+        self.grid_size = grid_size
+
+        for i, c in enumerate(self.classes):
+            new_files = [join(root, c, f) for f in listdir(join(root, c))]
+            self.files += new_files
+            self.labels += [i] * len(new_files)
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        """
+        returns events and label, loading events from aedat
+        :param idx:
+        :return: x,y,t,p,  label
+        """
+        label = self.labels[idx]
+        f = self.files[idx]
+        events = np.load(f).astype(np.float32)
+
+        #决定要不要裁剪
+        if self.event_crop:
+            events,_,_ = event_cropping(events,len(events),percent=0.5)
+
+        #将事件转换到vox
+        event_vox = events_to_vox(events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
+
+        return event_vox, label
+
+
 class Syn_Events(Dataset):
     """
         syn_corner数据集通过syn2e建立,具体格式如下：
