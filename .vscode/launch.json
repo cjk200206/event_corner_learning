@@ -5,6 +5,24 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "preprocessing测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "preprocess_event_superpoint.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--validation_dataset",
+                "syn/val",
+                "--training_dataset",
+                "syn/train",
+                "--device",
+                "cuda:0",
+                "--mode",
+                "raw_files"
+            ]
+        },
+        {
             "name": "output_ncal测试",
             "type": "debugpy",
             "request": "launch",
@@ -56,7 +74,7 @@
             "justMyCode": true,
             "args": [
                 "--test_dataset",
-                "/home/cjk2002/code/syn2e/datasets/val",
+                "/home/cjk2002/code/syn2e/datasets/test",
                 "--checkpoint",
                 // "log/superpoint_ckpt/superpoint_04131627.pth",
                 // "log/superpoint_ckpt/checkpoint_08700_3.2319.pth",
@@ -81,12 +99,12 @@
             "justMyCode": true,
             "args": [
                 "--test_dataset",
-                "/home/cjk2002/code/syn2e/datasets/val",
+                "/home/cjk2002/code/syn2e/datasets/test",
                 "--checkpoint",
-                // "log/superpoint_ckpt/superpoint_04132030.pth",
+                "log/superpoint_ckpt/superpoint_04152215.pth",
                 // "log/superpoint_ckpt/superpoint_v1.pth",
                 // "log/superpoint_ckpt/model_best.pth",
-                "log/superpoint_ckpt/superpoint_04141249_best.pth",
+                // "log/superpoint_ckpt/superpoint_04141249_best.pth",
                 "--output_path",
                 "/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint",
                 "--device",
@@ -114,7 +132,9 @@
                 "--pretrained",
                 "log/superpoint_ckpt/superpoint_04141249_best.pth",
                 "--batch_size",
-                "2"
+                "2",
+                "--mode",
+                "preprocessed_files"
             ]
         }
     ]

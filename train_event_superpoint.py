@@ -35,6 +35,8 @@ def FLAGS():
     parser.add_argument("--validation_dataset", default="/remote-home/share/cjk/syn2e/datasets/val")
     parser.add_argument("--training_dataset", default="/remote-home/share/cjk/syn2e/datasets/train")
     # parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
+    parser.add_argument("--mode", default="raw_files")
+
     # logging options
     parser.add_argument("--log_dir", default="log/superpoint")
     parser.add_argument("--pretrained",default=None)
@@ -72,8 +74,8 @@ if __name__ == '__main__':
     # os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
     flags = FLAGS()
     # datasets, add augmentation to training set
-    training_dataset = Syn_Superpoint(flags.training_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False)
-    validation_dataset = Syn_Superpoint(flags.validation_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False)
+    training_dataset = Syn_Superpoint(flags.training_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False,mode=flags.mode)
+    validation_dataset = Syn_Superpoint(flags.validation_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False,mode=flags.mode)
 
     # construct loader, handles data streaming to gpu
     training_loader = DataLoader(training_dataset,batch_size=flags.batch_size,

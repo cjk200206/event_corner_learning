@@ -31,7 +31,7 @@ def event_cropping(events,length,percent = 0.1): #随机裁剪一个事件的片
 
     return cropped_events,start_idx,end_idx
 
-#构建Vox和heatmap_label
+# 构建Vox和heatmap_label
 def events_to_vox_and_heatmap(events, num_time_bins=10, grid_size=(260, 346)):
     vox = torch.zeros((num_time_bins, *grid_size))
     label_vox = torch.zeros((num_time_bins, *grid_size))
@@ -62,6 +62,9 @@ def events_to_vox_and_heatmap(events, num_time_bins=10, grid_size=(260, 346)):
 
     return vox,label_vox,heatmap
 
+
+
+
 #无增强角点标记的事件数据，转化成vox
 def events_to_vox(events, num_time_bins=10, grid_size=(260, 346)):
     vox = torch.zeros((num_time_bins, *grid_size))
@@ -79,13 +82,15 @@ def events_to_vox(events, num_time_bins=10, grid_size=(260, 346)):
 #数据增强
 def add_salt_and_pepper_new(vox):
     """ Add salt and pepper noise to an image """
-    noise = torch.from_numpy(np.random.randint(0, 256, vox.shape))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    vox = vox.to(device)
+    noise = torch.randint(0, 256, size=vox.shape,device=device)
     # black = noise < 3
     white = noise > 254
     vox[white] = 255
     # vox[black] = 0
 
-    return vox
+    return vox.cpu()
 
 #构建img的label
 def corner_to_heatmap(label, grid_size=(260, 346)):
@@ -314,25 +319,37 @@ class Syn_Superpoint(Dataset):
                 /others
             /val
     """
-    def __init__(self,root,event_crop = True,num_time_bins = 10,grid_size=(260, 346)): #这里的root从/train或者/val开始
+    def __init__(self,root,event_crop = True,num_time_bins = 10,grid_size=(260, 346),mode = "raw_files"): #这里的root从/train或者/val开始
         self.events_paths = [] # e.g. /datasets/train/syn_polygon/events/0
         self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
         self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
+        self.preprocessed_files = []
         self.event_crop = event_crop # 决定是否需要裁剪事件片段
         self.num_time_bins = num_time_bins
         self.grid_size = grid_size
+        self.mode = mode
 
         for path, dirs, files in os.walk(root,followlinks=True):
-            if path.split('/')[-1] == 'augmented_events':
-                for dir in sorted(dirs): # 加入文件夹/0 -> /100
-                    self.events_paths.append(join(path,dir))
-                    for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
-                        self.events_files.append(join(path,dir,file))
-            else:
-                continue
+            if self.mode == "raw_files":
+                if path.split('/')[-1] == 'augmented_events':
+                    for dir in sorted(dirs): # 加入文件夹/0 -> /100
+                        self.events_paths.append(join(path,dir))
+                        for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
+                            self.events_files.append(join(path,dir,file))
+                else:
+                    continue
+            elif self.mode == "preprocessed_files":
+                if path.split('/')[-1] == 'preprocessed':
+                    for file in files: #加入文件/preprocessed/00000000.npz
+                        self.preprocessed_files.append(join(path,file))
+                else:
+                    continue
     
     def __len__(self):
-        return len(self.events_files)
+        if self.mode == "raw_files":
+            return len(self.events_files)
+        elif self.mode == "preprocessed_files":
+            return len(self.preprocessed_files)
     
     def __getitem__(self, idx):
         """
@@ -340,22 +357,33 @@ class Syn_Superpoint(Dataset):
         :param idx:
         :return: x,y,t,p  label
         """
-        e_f = self.events_files[idx]
-        augmented_events = np.loadtxt(e_f).astype(np.float32)
+        if self.mode == "raw_files":
+            e_f = self.events_files[idx]
+            augmented_events = np.loadtxt(e_f).astype(np.float32)
 
-        #决定要不要裁剪
-        if self.event_crop:
-            augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),percent=0.5)
-        
-        #将事件转换到vox和heatmap
-        event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
+            #决定要不要裁剪
+            if self.event_crop:
+                augmented_events,_,_ = event_cropping(augmented_events,len(augmented_events),percent=0.5)
+            
+            #将事件转换到vox和heatmap
+            event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
 
-        #数据增强加噪声
-        event_vox = add_salt_and_pepper_new(event_vox)
+            #数据增强加噪声
+            event_vox = add_salt_and_pepper_new(event_vox)
 
-        # #原始的事件和label
-        # events = augmented_events[:,0:4]
-        # labels = augmented_events[:,-1].astype(int)
+            # #原始的事件和label
+            # events = augmented_events[:,0:4]
+            # labels = augmented_events[:,-1].astype(int)
+
+        elif self.mode == "preprocessed_files":
+            loaded_data = np.load(self.preprocessed_files[idx])
+            event_vox = loaded_data["event_vox"]
+            label_vox = loaded_data["label_vox"]
+            heatmap = loaded_data["heatmap"]
+
+            event_vox = torch.from_numpy(event_vox).squeeze(0)
+            label_vox = torch.from_numpy(label_vox).squeeze(0)
+            heatmap = torch.from_numpy(heatmap).squeeze(0)
 
         return event_vox, label_vox, heatmap
 
