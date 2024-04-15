@@ -76,6 +76,16 @@ def events_to_vox(events, num_time_bins=10, grid_size=(260, 346)):
 
     return vox
 
+#数据增强
+def add_salt_and_pepper_new(vox):
+    """ Add salt and pepper noise to an image """
+    noise = torch.from_numpy(np.random.randint(0, 256, vox.shape))
+    # black = noise < 3
+    white = noise > 254
+    vox[white] = 255
+    # vox[black] = 0
+
+    return vox
 
 #构建img的label
 def corner_to_heatmap(label, grid_size=(260, 346)):
@@ -339,6 +349,10 @@ class Syn_Superpoint(Dataset):
         
         #将事件转换到vox和heatmap
         event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
+
+        #数据增强加噪声
+        event_vox = add_salt_and_pepper_new(event_vox)
+
         # #原始的事件和label
         # events = augmented_events[:,0:4]
         # labels = augmented_events[:,-1].astype(int)

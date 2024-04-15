@@ -37,6 +37,7 @@ def FLAGS():
     # parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
     # logging options
     parser.add_argument("--log_dir", default="log/superpoint")
+    parser.add_argument("--pretrained",default=None)
 
     # loader and device options
     parser.add_argument("--device", default="cuda:0")
@@ -71,8 +72,8 @@ if __name__ == '__main__':
     # os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
     flags = FLAGS()
     # datasets, add augmentation to training set
-    training_dataset = Syn_Superpoint(flags.training_dataset,num_time_bins=1,grid_size=(260,346),event_crop=False)
-    validation_dataset = Syn_Superpoint(flags.validation_dataset,num_time_bins=1,grid_size=(260,346),event_crop=False)
+    training_dataset = Syn_Superpoint(flags.training_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False)
+    validation_dataset = Syn_Superpoint(flags.validation_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False)
 
     # construct loader, handles data streaming to gpu
     training_loader = DataLoader(training_dataset,batch_size=flags.batch_size,
@@ -82,6 +83,10 @@ if __name__ == '__main__':
 
     # model, and put to device
     model = EventCornerSuperpoint(voxel_dimension=(2,260,346))
+    # resume from ckpt
+    if flags.pretrained:
+        ckpt = torch.load(flags.pretrained)
+        model.load_state_dict(ckpt["state_dict"])
     model = model.to(flags.device)
 
     # optimizer and lr scheduler
@@ -108,12 +113,12 @@ if __name__ == '__main__':
             label_vox = label_vox.to(flags.device)
             heatmap = heatmap.to(flags.device)
             #转换标签
-            # rand_idx= np.random.randint(0,10)
-            # label_3d = getLabels(label_vox[:,rand_idx,:,:].unsqueeze(1),8)
-            label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
+            rand_idx= np.random.randint(0,3)
+            label_3d = getLabels(label_vox[:,rand_idx,:,:].unsqueeze(1),8)
+            # label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
             with torch.no_grad():
-                # semi, _ = model(event_vox[:,rand_idx,:,:].unsqueeze(1))
-                semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
+                semi, _ = model(event_vox[:,rand_idx,:,:].unsqueeze(1))
+                # semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
                 loss, accuracy = compute_superpoint_loss(semi, label_3d)
                 # loss, accuracy = compute_superpoint_argmax_loss(semi, label_3d)
 

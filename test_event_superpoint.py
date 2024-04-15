@@ -40,7 +40,7 @@ def FLAGS():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--pin_memory", type=bool, default=True)
     parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--output_path", default="/home/cjk2002/code/event_code/event_corner_learning/log")
+    parser.add_argument("--output_path", default="/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint")
 
 
     flags = parser.parse_args()
@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
     flags = FLAGS()
     # datasets, add augmentation to training set
-    test_dataset = Syn_Superpoint(flags.test_dataset,num_time_bins=10,grid_size=(260,346),event_crop=False)
+    test_dataset = Syn_Superpoint(flags.test_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False)
     # construct loader, handles data streaming to gpu
     test_loader = DataLoader(test_dataset,batch_size=flags.batch_size,
                                pin_memory=flags.pin_memory,collate_fn=default_collate)

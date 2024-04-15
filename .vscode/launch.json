@@ -88,7 +88,7 @@
                 // "log/superpoint_ckpt/model_best.pth",
                 "log/superpoint_ckpt/superpoint_04141249_best.pth",
                 "--output_path",
-                "/home/cjk2002/code/event_code/event_corner_learning/log",
+                "/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint",
                 "--device",
                 "cuda:0",
                 "--batch_size",
@@ -111,75 +111,10 @@
                 "log/event_superpoint",
                 "--device",
                 "cuda:0",
+                "--pretrained",
+                "log/superpoint_ckpt/superpoint_04141249_best.pth",
                 "--batch_size",
                 "2"
-            ]
-        },
-        {
-            "name": "train_event_heatmap测试",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "train_event_heatmaps.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": [
-                "--validation_dataset",
-                // "/remote-home/share/cjk/syn2e/datasets/test",
-                "/home/cjk2002/code/syn2e/datasets/val",
-                "--training_dataset",
-                // "/remote-home/share/cjk/syn2e/datasets/test",
-                "/home/cjk2002/code/syn2e/datasets/train",
-                "--log_dir",
-                "log/heatmap",
-                "--device",
-                "cuda:0",
-                "--batch_size",
-                "2"
-            ]
-        },
-        {
-            "name": "train_event_corners测试",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "train_event_corners.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": [
-                "--validation_dataset",
-                // "/remote-home/share/cjk/syn2e/datasets/test",
-                "/home/cjk2002/code/syn2e/datasets/val",
-                "--training_dataset",
-                // "/remote-home/share/cjk/syn2e/datasets/test",
-                "/home/cjk2002/code/syn2e/datasets/train",
-                "--log_dir",
-                "log/modify",
-                "--device",
-                "cuda:0"
-            ]
-        },
-        {
-            "name": "网络测试",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "main.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": [
-                "--validation_dataset",
-                "N-Caltech101/validation/",
-                "--training_dataset",
-                "N-Caltech101/training/",
-                "--log_dir",
-                "log/modify",
-                // "--batch_size",
-                // "1",
-                // "--num_workers",
-                // "0",
-                // "--pin_memory",
-                // "True",
-                "--device",
-                "cuda:0"
-                
             ]
         }
     ]
