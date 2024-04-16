@@ -5,6 +5,8 @@ import torchvision
 import os
 import numpy as np
 import tqdm
+import sys
+sys.path.append("../")
 
 # from utils.models import Classifier
 from utils.models_new import Classifier

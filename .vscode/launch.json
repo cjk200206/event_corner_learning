@@ -33,10 +33,10 @@
                 "--test_dataset",
                 "N-Caltech101/testing",
                 "--checkpoint",
-                // "log/superpoint_ckpt/superpoint_04132030.pth",
+                "log/superpoint_ckpt/superpoint_04161022.pth",
                 // "log/superpoint_ckpt/superpoint_v1.pth",
                 // "log/superpoint_ckpt/model_best.pth",
-                "log/superpoint_ckpt/superpoint_04141249_best.pth",
+                // "log/superpoint_ckpt/superpoint_04141249_best.pth",
                 "--output_path",
                 "/home/cjk2002/code/event_code/event_corner_learning/output/test_ncal",
                 "--device",
@@ -101,7 +101,7 @@
                 "--test_dataset",
                 "/home/cjk2002/code/syn2e/datasets/test",
                 "--checkpoint",
-                "log/superpoint_ckpt/superpoint_04152215.pth",
+                "../log/superpoint_ckpt/superpoint_04161022.pth",
                 // "log/superpoint_ckpt/superpoint_v1.pth",
                 // "log/superpoint_ckpt/model_best.pth",
                 // "log/superpoint_ckpt/superpoint_04141249_best.pth",
@@ -111,7 +111,8 @@
                 "cuda:0",
                 "--batch_size",
                 "2"
-            ]
+            ],
+            "cwd": "scripts"
         },
         {
             "name": "train_event_superpoint测试",

@@ -6,6 +6,8 @@ import tqdm
 import os
 import numpy as np
 import torch.nn.functional as F
+import sys
+sys.path.append("../")
 
 from utils.dataset import Syn_Superpoint
 from torch.utils.data import DataLoader

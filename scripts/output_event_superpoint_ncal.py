@@ -7,6 +7,8 @@ import os
 import numpy as np
 import torch.nn.functional as F
 import cv2
+import sys
+sys.path.append("../")
 
 from utils.dataset import NCaltech101_Superpoint
 from torch.utils.data import DataLoader

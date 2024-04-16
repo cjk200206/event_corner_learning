@@ -5,28 +5,55 @@ import torchvision
 import tqdm
 import os
 import numpy as np
-import torch.nn.functional as F
+import sys
+sys.path.append("../")
 
-from utils.dataset import Syn_Superpoint,Pic_Superpoint
+from utils.dataset import Syn_Events
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
-from utils.models_superpoint import EventCornerSuperpoint
-from utils.loss import compute_vox_loss,compute_superpoint_loss,compute_superpoint_argmax_loss
-from utils.utils.utils import getLabels
+from utils.models_new import EventCornerClassifier
+from utils.loss import cross_entropy_loss_and_accuracy
 from torch.utils.tensorboard import SummaryWriter
 
-def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
-    B, C, H, W = x.shape
-    if H > W:
-        h = H // 2
-        x = x[:, :, h - W // 2:h + W // 2, :]
-    else:
-        h = W // 2
-        x = x[:, :, :, h - H // 2:h + H // 2]
+#收集事件并处理，主要是处理事件长度不同的问题
+def collate_events(data): 
+    last_events = []
+    last_labels = []
+    events = []
+    for i, d in enumerate(data):
+        #把最后一个事件和标签记下来即可
+        last_events.append(d[0][-1])
+        last_labels.append(d[1][-1])
+        
+        ev = np.concatenate([d[0], i*np.ones((len(d[0]),1), dtype=np.float32)],1)
+        events.append(ev)
+    events = torch.from_numpy(np.concatenate(events,0))
+    last_events = default_collate(last_events)
+    last_labels = default_collate(last_labels)
+    last_pairs = (last_events,last_labels)
+    return events, last_pairs
 
-    x = F.interpolate(x, size=output_resolution)
+def percentile(t, q):
+    B, C, H, W = t.shape
+    k = 1 + round(.01 * float(q) * (C * H * W - 1))
+    result = t.view(B, -1).kthvalue(k).values
+    return result[:,None,None,None]
 
-    return x
+def create_image(representation):
+    B, C, H, W = representation.shape
+    representation = representation.view(B, 3, C // 3, H, W).sum(2)
+
+    # do robust min max norm
+    representation = representation.detach().cpu()
+    robust_max_vals = percentile(representation, 99)
+    robust_min_vals = percentile(representation, 1)
+
+    representation = (representation - robust_min_vals)/(robust_max_vals - robust_min_vals)
+    representation = torch.clamp(255*representation, 0, 255).byte()
+
+    representation = torchvision.utils.make_grid(representation)
+
+    return representation
 
 def FLAGS():
     parser = argparse.ArgumentParser("""Train classifier using a learnt quantization layer.""")
@@ -36,7 +63,7 @@ def FLAGS():
     parser.add_argument("--training_dataset", default="/remote-home/share/cjk/syn2e/datasets/train")
     # parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
     # logging options
-    parser.add_argument("--log_dir", default="log/superpoint")
+    parser.add_argument("--log_dir", default="log/events_corner")
 
     # loader and device options
     parser.add_argument("--device", default="cuda:0")
@@ -71,21 +98,21 @@ if __name__ == '__main__':
     # os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
     flags = FLAGS()
     # datasets, add augmentation to training set
-    training_dataset = Pic_Superpoint(flags.training_dataset,num_time_bins=10,grid_size=(260,346))
-    validation_dataset = Pic_Superpoint(flags.validation_dataset,num_time_bins=10,grid_size=(260,346))
+    training_dataset = Syn_Events(flags.training_dataset,)
+    validation_dataset = Syn_Events(flags.validation_dataset)
 
     # construct loader, handles data streaming to gpu
     training_loader = DataLoader(training_dataset,batch_size=flags.batch_size,
-                               pin_memory=flags.pin_memory,collate_fn=default_collate)
+                               pin_memory=flags.pin_memory,collate_fn=collate_events)
     validation_loader = DataLoader(validation_dataset,batch_size=flags.batch_size,
-                               pin_memory=flags.pin_memory,collate_fn=default_collate)
+                               pin_memory=flags.pin_memory,collate_fn=collate_events)
 
     # model, and put to device
-    model = EventCornerSuperpoint(voxel_dimension=(2,260,346))
+    model = EventCornerClassifier()
     model = model.to(flags.device)
 
     # optimizer and lr scheduler
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3,weight_decay=0.0001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.5)
 
     writer = SummaryWriter(flags.log_dir)
@@ -93,38 +120,38 @@ if __name__ == '__main__':
     iteration = 0
     min_validation_loss = 1000
 
+
     for i in range(flags.num_epochs):
-        # val
         sum_accuracy = 0
         sum_loss = 0
         model = model.eval()
+
         print(f"Validation step [{i:3d}/{flags.num_epochs:3d}]")
-        
-        for img,label in tqdm.tqdm(validation_loader):
-            label = crop_and_resize_to_resolution(label.unsqueeze(1))
+        for events, last_pairs in tqdm.tqdm(validation_loader):
+            
             # 把数据转到gpu
-            img = img.to(flags.device)/255
-            label = label.to(flags.device)
-            #转换标签
-            label_3d = getLabels(label,8)
+            events = events.to(flags.device)
+            last_events = last_pairs[0].to(flags.device)
+            last_labels = last_pairs[1].to(flags.device)
+
             with torch.no_grad():
-                semi, _ = model(img.unsqueeze(1).to(torch.float))
-                loss, accuracy = compute_superpoint_loss(semi, label_3d)
-                # loss, accuracy = compute_superpoint_argmax_loss(semi, label_3d)
+                pred_labels, representation = model(events,last_events)
+                loss, accuracy = cross_entropy_loss_and_accuracy(pred_labels, last_labels)
 
             sum_accuracy += accuracy
             sum_loss += loss
-        if len(validation_loader) != 0:
-            validation_loss = sum_loss.item() / len(validation_loader)
-            validation_accuracy = sum_accuracy / len(validation_loader)
-        else:
-            validation_loss = min_validation_loss
-            validation_accuracy = 0
-        print(f"Validation Loss {validation_loss:.4f}  Accuracy {validation_accuracy:.4f}")
+
+        validation_loss = sum_loss.item() / len(validation_loader)
+        validation_accuracy = sum_accuracy.item() / len(validation_loader)
 
         writer.add_scalar("validation/accuracy", validation_accuracy, iteration)
         writer.add_scalar("validation/loss", validation_loss, iteration)
 
+        # visualize representation
+        representation_vizualization = create_image(representation)
+        writer.add_image("validation/representation", representation_vizualization, iteration)
+
+        print(f"Validation Loss {validation_loss:.4f}  Accuracy {validation_accuracy:.4f}")
 
         if validation_loss < min_validation_loss:
             min_validation_loss = validation_loss
@@ -137,7 +164,7 @@ if __name__ == '__main__':
             }, "log/model_best.pth")
             print("New best at ", validation_loss)
 
-        if (i+1) % flags.save_every_n_epochs == 0:
+        if i % flags.save_every_n_epochs == 0:
             state_dict = model.state_dict()
             torch.save({
                 "state_dict": state_dict,
@@ -145,27 +172,24 @@ if __name__ == '__main__':
                 "iteration": iteration
             }, "log/checkpoint_%05d_%.4f.pth" % (iteration, min_validation_loss))
 
-        # train
         sum_accuracy = 0
         sum_loss = 0
+
         model = model.train()
         print(f"Training step [{i:3d}/{flags.num_epochs:3d}]")
-
-        for img,label in tqdm.tqdm(training_loader):
-            label = crop_and_resize_to_resolution(label.unsqueeze(1))
+        for events, last_pairs in tqdm.tqdm(training_loader):
             # 把数据转到gpu
-            img = img.to(flags.device)/255
-            label = label.to(flags.device)
+            events = events.to(flags.device)
+            last_events = last_pairs[0].to(flags.device)
+            last_labels = last_pairs[1].to(flags.device)
 
             optimizer.zero_grad()
 
-            #转换标签,随机挑一个切片
-            label_3d = getLabels(label,8)
-            semi, _ = model(img.unsqueeze(1).to(torch.float))
-            # with torch.autograd.detect_anomaly():
-            loss, accuracy = compute_superpoint_loss(semi, label_3d)
-            # loss, accuracy = compute_superpoint_argmax_loss(semi, label_3d)
-            loss.backward()
+            pred_labels, representation = model(events,last_events)
+            with torch.autograd.detect_anomaly():
+                loss, accuracy = cross_entropy_loss_and_accuracy(pred_labels, last_labels)
+
+                loss.backward()
 
             optimizer.step()
 
@@ -176,16 +200,15 @@ if __name__ == '__main__':
 
         if i % 10 == 9:
             lr_scheduler.step()
-        if len(training_loader) != 0:
-            training_loss = sum_loss.item() / len(training_loader)
-            training_accuracy = sum_accuracy / len(training_loader)
-        else:
-            training_loss = min_validation_loss
-            training_accuracy = 0
+
+        training_loss = sum_loss.item() / len(training_loader)
+        training_accuracy = sum_accuracy.item() / len(training_loader)
         print(f"Training Iteration {iteration:5d}  Loss {training_loss:.4f}  Accuracy {training_accuracy:.4f}")
 
         writer.add_scalar("training/accuracy", training_accuracy, iteration)
         writer.add_scalar("training/loss", training_loss, iteration)
 
+        representation_vizualization = create_image(representation)
+        writer.add_image("training/representation", representation_vizualization, iteration)
 
 

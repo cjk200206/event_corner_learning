@@ -3,6 +3,8 @@ import argparse
 import torch
 import tqdm
 import os
+import sys
+sys.path.append("../")
 
 from loader import Loader
 from loss import cross_entropy_loss_and_accuracy

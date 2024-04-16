@@ -4,6 +4,8 @@ import torch
 import tqdm
 import os
 import numpy as np
+import sys
+sys.path.append("../")
 
 from utils.dataset import Syn_Events
 from torch.utils.data import DataLoader
