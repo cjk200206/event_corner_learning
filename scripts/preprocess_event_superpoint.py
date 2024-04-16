@@ -75,15 +75,15 @@ if __name__ == '__main__':
         event_vox = event_vox.numpy()
         label_vox = label_vox.numpy()
         heatmap = heatmap.numpy()
-        np.savez("{}/{:08d}.npz".format(preprocessed_val_path,val_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
+        np.savez_compressed("{}/{:08d}.npz".format(preprocessed_val_path,val_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
         val_counter+=1
 
-    # train_counter = 0
-    # for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
-    #     event_vox = event_vox.numpy()
-    #     label_vox = label_vox.numpy()
-    #     heatmap = heatmap.numpy()
-    #     np.savez_compressed("{}/{:08d}.npz".format(preprocessed_train_path,train_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
-    #     train_counter+=1
+    train_counter = 0
+    for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
+        event_vox = event_vox.numpy()
+        label_vox = label_vox.numpy()
+        heatmap = heatmap.numpy()
+        np.savez_compressed("{}/{:08d}.npz".format(preprocessed_train_path,train_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
+        train_counter+=1
 
 
