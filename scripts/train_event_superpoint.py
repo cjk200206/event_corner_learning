@@ -88,7 +88,7 @@ if __name__ == '__main__':
     # model, and put to device
     model = EventCornerSuperpoint(voxel_dimension=(2,260,346))
     # resume from ckpt
-    if flags.pretrained:
+    if flags.pretrained != None:
         ckpt = torch.load(flags.pretrained)
         model.load_state_dict(ckpt["state_dict"])
     model = model.to(flags.device)
@@ -148,7 +148,7 @@ if __name__ == '__main__':
                 "state_dict": state_dict,
                 "min_val_loss": min_validation_loss,
                 "iteration": iteration
-            }, "log/model_best.pth")
+            }, "../log/model_best.pth")
             print("New best at ", validation_loss)
 
         if i % flags.save_every_n_epochs == 0:
@@ -157,7 +157,7 @@ if __name__ == '__main__':
                 "state_dict": state_dict,
                 "min_val_loss": min_validation_loss,
                 "iteration": iteration
-            }, "log/checkpoint_%05d_%.4f.pth" % (iteration, min_validation_loss))
+            }, "../log/checkpoint_%05d_%.4f.pth" % (iteration, min_validation_loss))
 
         # train
         sum_accuracy = 0

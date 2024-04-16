@@ -13,9 +13,9 @@
             "justMyCode": true,
             "args": [
                 "--validation_dataset",
-                "syn/val",
+                "../syn/val/",
                 "--training_dataset",
-                "syn/train",
+                "../syn/train/",
                 "--device",
                 "cuda:0",
                 "--mode",
@@ -123,20 +123,21 @@
             "justMyCode": true,
             "args": [
                 "--validation_dataset",
-                "/home/cjk2002/code/event_code/event_corner_learning/syn/val",
+                "../syn/val",
                 "--training_dataset",
-                "/home/cjk2002/code/event_code/event_corner_learning/syn/train",
+                "../syn/train",
                 "--log_dir",
-                "log/event_superpoint",
+                "../log/event_superpoint",
                 "--device",
                 "cuda:0",
-                "--pretrained",
-                "log/superpoint_ckpt/superpoint_04141249_best.pth",
+                // "--pretrained",
+                // "../log/superpoint_ckpt/superpoint_04141249_best.pth",
                 "--batch_size",
                 "2",
                 "--mode",
-                "preprocessed_files"
-            ]
+                "preprocessed_files",
+            ],
+            "cwd": "scripts"
         }
     ]
 }

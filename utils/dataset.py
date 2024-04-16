@@ -368,9 +368,6 @@ class Syn_Superpoint(Dataset):
             #将事件转换到vox和heatmap
             event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
 
-            #数据增强加噪声
-            event_vox = add_salt_and_pepper_new(event_vox)
-
             # #原始的事件和label
             # events = augmented_events[:,0:4]
             # labels = augmented_events[:,-1].astype(int)
@@ -384,6 +381,9 @@ class Syn_Superpoint(Dataset):
             event_vox = torch.from_numpy(event_vox).squeeze(0)
             label_vox = torch.from_numpy(label_vox).squeeze(0)
             heatmap = torch.from_numpy(heatmap).squeeze(0)
+
+            #数据增强加噪声
+            event_vox = add_salt_and_pepper_new(event_vox)
 
         return event_vox, label_vox, heatmap
 

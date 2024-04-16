@@ -34,8 +34,8 @@ def FLAGS():
     parser = argparse.ArgumentParser("""preprocess_data.""")
 
     # training / validation dataset
-    parser.add_argument("--validation_dataset", default="/remote-home/share/cjk/syn2e/datasets/val")
-    parser.add_argument("--training_dataset", default="/remote-home/share/cjk/syn2e/datasets/train")
+    parser.add_argument("--validation_dataset","-val", default="/remote-home/share/cjk/syn2e/datasets/val")
+    parser.add_argument("--training_dataset","-train", default="/remote-home/share/cjk/syn2e/datasets/train")
     # parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
     parser.add_argument("--mode", default="raw_files")
     
@@ -70,20 +70,20 @@ if __name__ == '__main__':
     os.makedirs(preprocessed_train_path,exist_ok=True)
     os.makedirs(preprocessed_val_path,exist_ok=True)
 
-    # val_counter = 0
-    # for event_vox,label_vox,heatmap in tqdm.tqdm(validation_loader):
-    #     event_vox = event_vox.numpy()
-    #     label_vox = label_vox.numpy()
-    #     heatmap = heatmap.numpy()
-    #     np.savez("{}/{:08d}.npz".format(preprocessed_val_path,val_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
-    #     val_counter+=1
-
-    train_counter = 0
-    for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
+    val_counter = 0
+    for event_vox,label_vox,heatmap in tqdm.tqdm(validation_loader):
         event_vox = event_vox.numpy()
         label_vox = label_vox.numpy()
         heatmap = heatmap.numpy()
-        np.savez("{}/{:08d}.npz".format(preprocessed_train_path,train_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
-        train_counter+=1
+        np.savez("{}/{:08d}.npz".format(preprocessed_val_path,val_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
+        val_counter+=1
+
+    # train_counter = 0
+    # for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
+    #     event_vox = event_vox.numpy()
+    #     label_vox = label_vox.numpy()
+    #     heatmap = heatmap.numpy()
+    #     np.savez_compressed("{}/{:08d}.npz".format(preprocessed_train_path,train_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap)
+    #     train_counter+=1
 
 
