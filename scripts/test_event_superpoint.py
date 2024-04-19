@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
 from utils.loss import compute_vox_loss,compute_superpoint_loss
-from utils.utils.utils import getLabels,heatmap_nms,inv_warp_image,inv_warp_image_batch
+from utils.utils.utils import getLabels,heatmap_nms,inv_warp_image,inv_warp_image_batch,add_salt_and_pepper_new
 from utils.utils.transformation import random_affine_transform
 from utils.utils.homographies import sample_homography_np
 from utils.utils.d2s import flatten_64to1
@@ -97,40 +97,59 @@ if __name__ == '__main__':
     os.makedirs(flags.output_path + "/input_img_cropped_transformed",exist_ok=True) 
         
     print("Test step")
+
+    HA_params = {
+        "translation": True,
+        "rotation": True,
+        "scaling": True,
+        "perspective": True,
+        "scaling_amplitude": 0.2,
+        "perspective_amplitude_x": 0.2,
+        "perspective_amplitude_y": 0.2,
+        "allow_artifacts": True,
+        "patch_ratio": 0.85,
+    }
         
     for event_vox,label_vox,heatmap in tqdm.tqdm(test_loader):
-        # 裁剪标签
+        #裁剪标签
         heatmap = crop_and_resize_to_resolution(heatmap)
-        # 把数据转到gpu
+        #把数据转到gpu
         event_vox = event_vox.to(flags.device)
         label_vox = label_vox.to(flags.device)
         heatmap = heatmap.to(flags.device)
         #取出单通道的vox
         label_2d = label_vox[:,0,:,:]
         input_vox = event_vox[:,0,:,:]
-        #做仿射变换
-        vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
-        label_2d_transformed = vox_transform[:,0]
-        input_vox_transformed =vox_transform[:,1]
+        
+        # #做仿射变换
+        # vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
+        # label_2d_transformed = vox_transform[:,0]
+        # input_vox_transformed =vox_transform[:,1]
 
-        #HA变换测试
-        homography = sample_homography_np(np.array([2, 2]))
+        #做HA变换
+        homography = sample_homography_np(np.array([2, 2]),**HA_params)
         ##### use inverse from the sample homography
         homography = inv(homography)
         ######
         inv_homography = inv(homography)
         inv_homography = torch.tensor(inv_homography).to(torch.float32)
         homography = torch.tensor(homography).to(torch.float32).cuda()
-        # images
-        warped_img = inv_warp_image_batch(input_vox[0],homography,device=input_vox[0].device)
-        
+        #images
+        warped_imgs = inv_warp_image_batch(torch.cat((label_2d,input_vox),dim=0).unsqueeze(1),\
+                                           homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
+        label_2d_transformed = warped_imgs[:label_2d.size(0),0]
+        input_vox_transformed =warped_imgs[label_2d.size(0):,0]
 
-        # 裁剪图像
+        #裁剪图像
         event_vox_cropped = crop_and_resize_to_resolution(input_vox.unsqueeze(1))
         event_vox_cropped_transformed = crop_and_resize_to_resolution(input_vox_transformed.unsqueeze(1))
         label_2d = crop_and_resize_to_resolution(label_2d.unsqueeze(1))
         label_2d_transformed = crop_and_resize_to_resolution(label_2d_transformed.unsqueeze(1))
-        #转换标签
+        #增加椒盐噪声
+        event_vox_cropped = add_salt_and_pepper_new(event_vox_cropped)
+        event_vox_cropped_transformed = add_salt_and_pepper_new(event_vox_cropped_transformed)
+        input_vox = add_salt_and_pepper_new(input_vox)
+        input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed)
         label_3d = getLabels(label_2d,8)
         label_3d_transform = getLabels(label_2d_transformed,8)
 

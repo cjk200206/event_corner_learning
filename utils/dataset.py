@@ -4,6 +4,7 @@ from os.path import join
 import os
 import torch 
 from torch.utils.data import Dataset
+from utils.utils.utils import add_salt_and_pepper_new
 import cv2
 
 def random_shift_events(events, max_shift=20, resolution=(180, 240)):
@@ -31,7 +32,7 @@ def event_cropping(events,length,percent = 0.1): #随机裁剪一个事件的片
 
     return cropped_events,start_idx,end_idx
 
-# 构建Vox和heatmap_label
+#构建Vox和heatmap_label
 def events_to_vox_and_heatmap(events, num_time_bins=10, grid_size=(260, 346)):
     vox = torch.zeros((num_time_bins, *grid_size))
     label_vox = torch.zeros((num_time_bins, *grid_size))
@@ -75,19 +76,6 @@ def events_to_vox(events, num_time_bins=10, grid_size=(260, 346)):
         vox[i, y_indices, x_indices] = 1
 
     return vox
-
-#数据增强
-def add_salt_and_pepper_new(vox):
-    """ Add salt and pepper noise to an image """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    vox = vox.to(device)
-    noise = torch.randint(0, 256, size=vox.shape,device=device)
-    # black = noise < 3
-    white = noise > 254
-    vox[white] = 255
-    # vox[black] = 0
-
-    return vox.cpu()
 
 #构建img的label
 def corner_to_heatmap(label, grid_size=(260, 346)):
@@ -368,7 +356,8 @@ class Syn_Superpoint(Dataset):
 
             if self.test == True:
                 #数据增强加噪声
-                event_vox = add_salt_and_pepper_new(event_vox)
+                # event_vox = add_salt_and_pepper_new(event_vox)
+                pass
 
             # #原始的事件和label
             # events = augmented_events[:,0:4]
@@ -385,7 +374,7 @@ class Syn_Superpoint(Dataset):
             heatmap = torch.from_numpy(heatmap).squeeze(0)
 
             #数据增强加噪声
-            event_vox = add_salt_and_pepper_new(event_vox)
+            # event_vox = add_salt_and_pepper_new(event_vox)
 
         return event_vox, label_vox, heatmap
 

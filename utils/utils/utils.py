@@ -186,7 +186,20 @@ def heatmap_nms(heatmap, nms_dist=4, conf_thresh=0.020):
     ] = 1
     return semi_thd_nms_sample
 
+#数据增强,添加椒盐噪声
+def add_salt_and_pepper_new(vox):
+    """ Add salt and pepper noise to an image """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    vox = vox.to(device)
+    noise = torch.randint(0, 256, size=vox.shape,device=device)
+    # black = noise < 3
+    white = noise > 254
+    vox[white] = 255
+    # vox[black] = 0
 
+    return vox.cpu()
+
+#HA变换的函数调用
 def warp_points(points, homographies, device='cpu'):
     """
     Warp a list of points with the given homography.
@@ -206,7 +219,7 @@ def warp_points(points, homographies, device='cpu'):
     batch_size = homographies.shape[0]
     points = torch.cat((points.float(), torch.ones((points.shape[0], 1)).to(device)), dim=1)
     points = points.to(device)
-    homographies = homographies.view(batch_size*3,3)
+    homographies = homographies.contiguous().view(batch_size*3,3)
     # warped_points = homographies*points
     # points = points.double()
     warped_points = homographies@points.transpose(0,1)
@@ -217,7 +230,7 @@ def warp_points(points, homographies, device='cpu'):
     warped_points = warped_points[:, :, :2] / warped_points[:, :, 2:]
     return warped_points[0,:,:] if no_batches else warped_points
 
-# from utils.utils import inv_warp_image_batch
+#HA变换图像
 def inv_warp_image_batch(img, mat_homo_inv, device='cpu', mode='bilinear'):
     '''
     Inverse warp images in batch

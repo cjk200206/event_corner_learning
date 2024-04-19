@@ -9,13 +9,15 @@ import torch.nn.functional as F
 import sys
 sys.path.append("../")
 
+from numpy.linalg import inv
 from utils.dataset import Syn_Superpoint
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
 from utils.loss import compute_vox_loss,compute_superpoint_loss,compute_superpoint_argmax_loss
-from utils.utils.utils import getLabels
+from utils.utils.utils import getLabels,add_salt_and_pepper_new,inv_warp_image,inv_warp_image_batch
 from utils.utils.transformation import random_affine_transform
+from utils.utils.homographies import sample_homography_np
 from torch.utils.tensorboard import SummaryWriter
 
 def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
@@ -103,6 +105,19 @@ if __name__ == '__main__':
     iteration = 0
     min_validation_loss = 1000
 
+    #HA变换的参数
+    HA_params = {
+        "translation": True,
+        "rotation": True,
+        "scaling": True,
+        "perspective": True,
+        "scaling_amplitude": 0.2,
+        "perspective_amplitude_x": 0.2,
+        "perspective_amplitude_y": 0.2,
+        "allow_artifacts": True,
+        "patch_ratio": 0.85,
+    }
+
     for i in range(flags.num_epochs):
         # val
         sum_accuracy = 0
@@ -125,17 +140,33 @@ if __name__ == '__main__':
             # label_2d = label_vox[:,0,:,:]
             # input_vox = event_vox[:,0,:,:]
 
-            #做h仿射变换
-            vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
-            label_2d_transform = vox_transform[:,0]
-            input_vox_transform =vox_transform[:,1]
+            # #做仿射变换
+            # vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
+            # label_2d_transformed = vox_transform[:,0]
+            # input_vox_transformed =vox_transform[:,1]
+
+            #做HA变换
+            homography = sample_homography_np(np.array([2, 2]),**HA_params)
+            homography = inv(homography)
+            inv_homography = inv(homography)
+            inv_homography = torch.tensor(inv_homography).to(torch.float32)
+            homography = torch.tensor(homography).to(torch.float32).cuda()
+            #images
+            warped_imgs = inv_warp_image_batch(torch.cat((label_2d,input_vox),dim=0).unsqueeze(1),\
+                                            homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
+            label_2d_transformed = warped_imgs[:label_2d.size(0),0]
+            input_vox_transformed = warped_imgs[label_2d.size(0):,0]
+            #增加椒盐噪声
+            input_vox = add_salt_and_pepper_new(input_vox)
+            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed)
+
             #转换标签
             label_3d = getLabels(label_2d.unsqueeze(1),8)
-            label_3d_transform = getLabels(label_2d_transform.unsqueeze(1),8)
+            label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8)
 
             with torch.no_grad():
-                semi, _ = model(input_vox.unsqueeze(1))
-                semi_transform, _ = model(input_vox_transform.unsqueeze(1))
+                semi, _ = model(input_vox.unsqueeze(1).cuda())
+                semi_transform, _ = model(input_vox_transformed.unsqueeze(1).cuda())
             
                 loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
                 loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)
@@ -196,20 +227,35 @@ if __name__ == '__main__':
             # label_2d = label_vox[:,0,:,:]
             # input_vox = event_vox[:,0,:,:]
 
-            #做仿射变换
-            vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
-            label_2d_transform = vox_transform[:,0]
-            input_vox_transform =vox_transform[:,1]
+            # #做仿射变换
+            # vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
+            # label_2d_transformed = vox_transform[:,0]
+            # input_vox_transformed =vox_transform[:,1]
+
+            #做HA变换
+            homography = sample_homography_np(np.array([2, 2]),**HA_params)
+            homography = inv(homography)
+            inv_homography = inv(homography)
+            inv_homography = torch.tensor(inv_homography).to(torch.float32)
+            homography = torch.tensor(homography).to(torch.float32).cuda()
+            #images
+            warped_imgs = inv_warp_image_batch(torch.cat((label_2d,input_vox),dim=0).unsqueeze(1),\
+                                            homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
+            label_2d_transformed = warped_imgs[:label_2d.size(0),0]
+            input_vox_transformed = warped_imgs[label_2d.size(0):,0]
+            #增加椒盐噪声
+            input_vox = add_salt_and_pepper_new(input_vox)
+            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed)
             
             #标签转换
             label_3d = getLabels(label_2d.unsqueeze(1),8)
-            label_3d_transform = getLabels(label_2d_transform.unsqueeze(1),8)
+            label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8)
 
 
             optimizer.zero_grad()
 
-            semi, _ = model(input_vox.unsqueeze(1))
-            semi_transform, _ = model(input_vox_transform.unsqueeze(1))
+            semi, _ = model(input_vox.unsqueeze(1).cuda())
+            semi_transform, _ = model(input_vox_transformed.unsqueeze(1).cuda())
             
             loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
             loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)
