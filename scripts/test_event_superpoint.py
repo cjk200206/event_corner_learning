@@ -75,7 +75,7 @@ if __name__ == '__main__':
                                pin_memory=flags.pin_memory,collate_fn=default_collate)
   
     # model, and put to device
-    model = EventCornerSuperpoint(voxel_dimension=(2,260,346))
+    model = EventCornerSuperpoint(crop_dimension=(224, 224))
     ckpt = torch.load(flags.checkpoint)
     model.load_state_dict(ckpt["state_dict"])
     # model.backbone.load_state_dict(ckpt,strict=False)
@@ -139,6 +139,8 @@ if __name__ == '__main__':
                                            homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
         label_2d_transformed = warped_imgs[:label_2d.size(0),0]
         input_vox_transformed =warped_imgs[label_2d.size(0):,0]
+        label_2d_transformed = torch.where(label_2d_transformed > 0, torch.tensor(1.0).cuda(), label_2d_transformed) #大于0的地方全转到1
+        input_vox_transformed = torch.where(input_vox_transformed > 0, torch.tensor(1.0).cuda(), input_vox_transformed) #大于0的地方全转到1
 
         #裁剪图像
         event_vox_cropped = crop_and_resize_to_resolution(input_vox.unsqueeze(1))

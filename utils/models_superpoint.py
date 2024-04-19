@@ -24,7 +24,8 @@ class SuperPointNet(torch.nn.Module):
         c1, c2, c3, c4, c5, d1 = 64, 64, 128, 128, 256, 256
         det_h = 65
         gn = 64
-        useGn = False
+        # useGn = False
+        useGn = True
         self.reBn = True
         if self.reBn:
             print ("model structure: relu - bn - conv")
