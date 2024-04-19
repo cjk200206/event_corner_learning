@@ -1,42 +1,45 @@
 import torch
-import torchvision.transforms.functional as TF
+import torch.nn.functional as F
 
-def random_transform(image_tensor):
-    # 随机旋转角度在(-45, 45)之间
-    angle = torch.randint(-45, 45, (1,))
-    # 随机水平和垂直平移在(-30, 30)之间
-    translate = (torch.randint(-30, 30, (1,)).item(), torch.randint(-30, 30, (1,)).item())
+def random_affine_transform(vox):
+    # 随机生成旋转角度在(-45, 45)之间
+    angle = torch.randint(-45, 45, (vox.size(0),))
+    # 随机水平和垂直平移在(-30/260, 30/260)之间
+    translate = torch.randint(-30, 30, (vox.size(0), 2))/vox.size(2)
     # 随机缩放在(0.8, 1.2)之间
-    scale = torch.rand(1).item() * 0.4 + 0.8
-    # 随机水平和垂直形变在(-0.2, 0.2)之间
-    shear = torch.rand(1).item() * 0.4 - 0.2
-    # 随机水平翻转
-    horizontal_flip = torch.rand(1).item() > 0.5
-    # 随机垂直翻转
-    vertical_flip = torch.rand(1).item() > 0.5
+    scale = torch.rand(vox.size(0)) * 0.4 + 0.8
 
-    # 对每个通道的图像进行随机变换
-    transformed_images = []
-    for i in range(image_tensor.size(0)):
-        image = image_tensor[i]
+    # 构建旋转矩阵
+    theta = torch.zeros(vox.size(0),2, 3)
+    theta[:, 0, 0] = torch.cos(angle * torch.pi / 180.0)
+    theta[:, 0, 1] = -torch.sin(angle * torch.pi / 180.0)
+    theta[:, 1, 0] = torch.sin(angle * torch.pi / 180.0)
+    theta[:, 1, 1] = torch.cos(angle * torch.pi / 180.0)
 
-        # 随机旋转
-        image = TF.rotate(image, angle.item())
+    # 添加平移和缩放
+    theta[:, :, 2] = translate.float()
+    theta[:, 0, 0] *= scale
+    theta[:, 1, 1] *= scale
 
-        # 随机平移
-        image = TF.affine(image, angle=0, translate=translate, scale=scale, shear=shear)
+    # 将变换矩阵记录下来
+    # print("Affine transformation matrices:")
+    # print(theta)
 
-        # 随机水平翻转
-        if horizontal_flip:
-            image = TF.hflip(image)
+    # 创建仿射网格
+    grid = F.affine_grid(theta, vox.size()).to(vox.device)  # 创建仿射网格
 
-        # 随机垂直翻转
-        if vertical_flip:
-            image = TF.vflip(image)
+    # 对vox进行仿射变换
+    transformed_vox = F.grid_sample(vox, grid)
 
-        transformed_images.append(image)
+    return transformed_vox, theta
 
-    # 将变换后的图像堆叠成张量
-    transformed_image_tensor = torch.stack(transformed_images, dim=0)
+# # 假设 vox 是一个形状为 (n, 260, 346) 的张量
+# vox = torch.randn(2, 2, 260, 346)  # 生成一个示例张量
 
-    return transformed_image_tensor
+# # 执行仿射变换
+# transformed_vox, theta = random_affine_transform(vox)
+
+# # 输出变换后的张量形状
+# print("Transformed vox shape:", transformed_vox.shape)
+
+

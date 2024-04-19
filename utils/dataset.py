@@ -62,9 +62,6 @@ def events_to_vox_and_heatmap(events, num_time_bins=10, grid_size=(260, 346)):
 
     return vox,label_vox,heatmap
 
-
-
-
 #无增强角点标记的事件数据，转化成vox
 def events_to_vox(events, num_time_bins=10, grid_size=(260, 346)):
     vox = torch.zeros((num_time_bins, *grid_size))
@@ -319,7 +316,7 @@ class Syn_Superpoint(Dataset):
                 /others
             /val
     """
-    def __init__(self,root,event_crop = True,num_time_bins = 10,grid_size=(260, 346),mode = "raw_files"): #这里的root从/train或者/val开始
+    def __init__(self,root,event_crop = True,num_time_bins = 10,grid_size=(260, 346),mode = "raw_files",test = False): #这里的root从/train或者/val开始
         self.events_paths = [] # e.g. /datasets/train/syn_polygon/events/0
         self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
         self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
@@ -328,6 +325,7 @@ class Syn_Superpoint(Dataset):
         self.num_time_bins = num_time_bins
         self.grid_size = grid_size
         self.mode = mode
+        self.test = test
 
         for path, dirs, files in os.walk(root,followlinks=True):
             if self.mode == "raw_files":
@@ -367,6 +365,10 @@ class Syn_Superpoint(Dataset):
             
             #将事件转换到vox和heatmap
             event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
+
+            if self.test == True:
+                #数据增强加噪声
+                event_vox = add_salt_and_pepper_new(event_vox)
 
             # #原始的事件和label
             # events = augmented_events[:,0:4]

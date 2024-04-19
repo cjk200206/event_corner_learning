@@ -10,12 +10,15 @@ import torch.nn.functional as F
 import cv2
 sys.path.append("../")
 
+from numpy.linalg import inv
 from utils.dataset import Syn_Superpoint
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
 from utils.loss import compute_vox_loss,compute_superpoint_loss
-from utils.utils.utils import getLabels,heatmap_nms
+from utils.utils.utils import getLabels,heatmap_nms,inv_warp_image,inv_warp_image_batch
+from utils.utils.transformation import random_affine_transform
+from utils.utils.homographies import sample_homography_np
 from utils.utils.d2s import flatten_64to1
 from torch.utils.tensorboard import SummaryWriter
 
@@ -66,7 +69,7 @@ if __name__ == '__main__':
 
     flags = FLAGS()
     # datasets, add augmentation to training set
-    test_dataset = Syn_Superpoint(flags.test_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False)
+    test_dataset = Syn_Superpoint(flags.test_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False,test=True)
     # construct loader, handles data streaming to gpu
     test_loader = DataLoader(test_dataset,batch_size=flags.batch_size,
                                pin_memory=flags.pin_memory,collate_fn=default_collate)
@@ -88,61 +91,81 @@ if __name__ == '__main__':
     os.makedirs(flags.output_path + "/label",exist_ok=True)
     os.makedirs(flags.output_path + "/input_img",exist_ok=True) 
     os.makedirs(flags.output_path + "/input_img_cropped",exist_ok=True) 
+    os.makedirs(flags.output_path + "/heatmap_transformed",exist_ok=True)
+    os.makedirs(flags.output_path + "/label_transformed",exist_ok=True)
+    os.makedirs(flags.output_path + "/input_img_transformed",exist_ok=True) 
+    os.makedirs(flags.output_path + "/input_img_cropped_transformed",exist_ok=True) 
         
     print("Test step")
         
     for event_vox,label_vox,heatmap in tqdm.tqdm(test_loader):
-        event_vox_cropped = crop_and_resize_to_resolution(event_vox)
+        # 裁剪标签
         heatmap = crop_and_resize_to_resolution(heatmap)
-        label_vox = crop_and_resize_to_resolution(label_vox)
         # 把数据转到gpu
         event_vox = event_vox.to(flags.device)
         label_vox = label_vox.to(flags.device)
         heatmap = heatmap.to(flags.device)
+        #取出单通道的vox
+        label_2d = label_vox[:,0,:,:]
+        input_vox = event_vox[:,0,:,:]
+        #做仿射变换
+        vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
+        label_2d_transformed = vox_transform[:,0]
+        input_vox_transformed =vox_transform[:,1]
+
+        #HA变换测试
+        homography = sample_homography_np(np.array([2, 2]))
+        ##### use inverse from the sample homography
+        homography = inv(homography)
+        ######
+        inv_homography = inv(homography)
+        inv_homography = torch.tensor(inv_homography).to(torch.float32)
+        homography = torch.tensor(homography).to(torch.float32).cuda()
+        # images
+        warped_img = inv_warp_image_batch(input_vox[0],homography,device=input_vox[0].device)
+        
+
+        # 裁剪图像
+        event_vox_cropped = crop_and_resize_to_resolution(input_vox.unsqueeze(1))
+        event_vox_cropped_transformed = crop_and_resize_to_resolution(input_vox_transformed.unsqueeze(1))
+        label_2d = crop_and_resize_to_resolution(label_2d.unsqueeze(1))
+        label_2d_transformed = crop_and_resize_to_resolution(label_2d_transformed.unsqueeze(1))
         #转换标签
-        label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
+        label_3d = getLabels(label_2d,8)
+        label_3d_transform = getLabels(label_2d_transformed,8)
+
+
         with torch.no_grad():
-            semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
-            loss, accuracy = compute_superpoint_loss(semi, label_3d)
+            semi, _ = model(input_vox.unsqueeze(1))
+            semi_transform, _ = model(input_vox_transformed.unsqueeze(1))
+        
+            loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
+            loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)
+            loss = loss_a+loss_b
+            accuracy = (accuracy_a+accuracy_b)/2
 
         semi = F.softmax(semi,dim=1)
+        semi_transform = F.softmax(semi_transform, dim=1)
         #输出热力图
         flatten_semi = flatten_64to1(semi[:,:-1,:,:])
+        flatten_semi_transformed = flatten_64to1(semi_transform[:,:-1,:,:])
 
-        label_bin = torch.zeros_like(label_vox[0,0]).cpu()
-        heatmap_bin = torch.zeros_like(flatten_semi[0,0]).cpu()
-        img_bin = torch.zeros_like(event_vox[0,0,:,:]).cpu()
-        cropped_img_bin = torch.zeros_like(event_vox_cropped[0,0,:,:]).cpu()
-    
-        for nms_heatmap,input_img,cropped_img,label_heatmap in zip(flatten_semi,event_vox[:,0,:,:],event_vox_cropped[:,0,:,:],label_vox[:,0,:,:]):
+        for input_img,nms_heatmap,cropped_img,label_heatmap,\
+            input_img_transformed,nms_heatmap_transformed,cropped_img_transformed,label_heatmap_transformed \
+                in zip(input_vox,flatten_semi,event_vox_cropped.squeeze(1),label_2d.squeeze(1),\
+                       input_vox_transformed,flatten_semi_transformed,event_vox_cropped_transformed.squeeze(1),label_2d_transformed.squeeze(1)):
             nms_semi = heatmap_nms(nms_heatmap.cpu(),conf_thresh=0.020)
-
-            # heatmap_bin += torch.from_numpy(nms_semi).cpu()
-            # label_bin += label_heatmap.cpu()
-            # img_bin += input_img.cpu()
-            # cropped_img_bin += cropped_img.cpu()
-
-            # #每5个可视化一次
-            # if (img_num+1) % 5 ==0 : 
-            #     heatmap_bin[heatmap_bin>1]=1
-            #     label_bin[label_bin>1]=1
-            #     img_bin[img_bin>1]=1
-            #     cropped_img_bin[cropped_img_bin>1]=1
-
-            #     cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),heatmap_bin.cpu().numpy()*255)
-            #     cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_bin.cpu().numpy()*255)
-            #     cv2.imwrite("{}/input_img/{:08d}.jpg".format(flags.output_path,img_num),img_bin.cpu().numpy()*255)
-            #     cv2.imwrite("{}/input_img_cropped/{:08d}.jpg".format(flags.output_path,img_num),cropped_img_bin.cpu().numpy()*255)
-
-            #     label_bin = torch.zeros_like(label_vox[0,0]).cpu()
-            #     heatmap_bin = torch.zeros_like(flatten_semi[0,0]).cpu()
-            #     img_bin = torch.zeros_like(event_vox[0,0,:,:]).cpu()
-            #     cropped_img_bin = torch.zeros_like(event_vox_cropped[0,0,:,:]).cpu()
+            nms_semi_transformed = heatmap_nms(nms_heatmap_transformed.cpu(),conf_thresh=0.020)
             
             cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi*255)
             cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
             cv2.imwrite("{}/input_img/{:08d}.jpg".format(flags.output_path,img_num),input_img.cpu().numpy()*255)
             cv2.imwrite("{}/input_img_cropped/{:08d}.jpg".format(flags.output_path,img_num),cropped_img.cpu().numpy()*255)
+            #变换后的
+            cv2.imwrite("{}/heatmap_transformed/{:08d}.jpg".format(flags.output_path,img_num),nms_semi_transformed*255)
+            cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.cpu().numpy()*255)
+            cv2.imwrite("{}/input_img_transformed/{:08d}.jpg".format(flags.output_path,img_num),input_img_transformed.cpu().numpy()*255)
+            cv2.imwrite("{}/input_img_cropped_transformed/{:08d}.jpg".format(flags.output_path,img_num),cropped_img_transformed.cpu().numpy()*255)
             img_num += 1
 
         sum_accuracy += accuracy

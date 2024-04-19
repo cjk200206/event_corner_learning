@@ -15,6 +15,7 @@ from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
 from utils.loss import compute_vox_loss,compute_superpoint_loss,compute_superpoint_argmax_loss
 from utils.utils.utils import getLabels
+from utils.utils.transformation import random_affine_transform
 from torch.utils.tensorboard import SummaryWriter
 
 def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
@@ -110,21 +111,36 @@ if __name__ == '__main__':
         print(f"Validation step [{i:3d}/{flags.num_epochs:3d}]")
         
         for event_vox,label_vox,heatmap in tqdm.tqdm(validation_loader):
+            event_vox = crop_and_resize_to_resolution(event_vox)
             heatmap = crop_and_resize_to_resolution(heatmap)
             label_vox = crop_and_resize_to_resolution(label_vox)
             # 把数据转到gpu
             event_vox = event_vox.to(flags.device)
             label_vox = label_vox.to(flags.device)
             heatmap = heatmap.to(flags.device)
-            #转换标签
+            #随机选择
             rand_idx= np.random.randint(0,3)
-            label_3d = getLabels(label_vox[:,rand_idx,:,:].unsqueeze(1),8)
-            # label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
+            label_2d = label_vox[:,rand_idx,:,:]
+            input_vox = event_vox[:,rand_idx,:,:]
+            # label_2d = label_vox[:,0,:,:]
+            # input_vox = event_vox[:,0,:,:]
+
+            #做h仿射变换
+            vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
+            label_2d_transform = vox_transform[:,0]
+            input_vox_transform =vox_transform[:,1]
+            #转换标签
+            label_3d = getLabels(label_2d.unsqueeze(1),8)
+            label_3d_transform = getLabels(label_2d_transform.unsqueeze(1),8)
+
             with torch.no_grad():
-                semi, _ = model(event_vox[:,rand_idx,:,:].unsqueeze(1))
-                # semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
-                loss, accuracy = compute_superpoint_loss(semi, label_3d)
-                # loss, accuracy = compute_superpoint_argmax_loss(semi, label_3d)
+                semi, _ = model(input_vox.unsqueeze(1))
+                semi_transform, _ = model(input_vox_transform.unsqueeze(1))
+            
+                loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
+                loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)
+                loss = loss_a+loss_b
+                accuracy = (accuracy_a+accuracy_b)/2
 
             sum_accuracy += accuracy
             sum_loss += loss
@@ -166,23 +182,41 @@ if __name__ == '__main__':
         print(f"Training step [{i:3d}/{flags.num_epochs:3d}]")
 
         for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
+            event_vox = crop_and_resize_to_resolution(event_vox)
             heatmap = crop_and_resize_to_resolution(heatmap)
             label_vox = crop_and_resize_to_resolution(label_vox)
             # 把数据转到gpu
             event_vox = event_vox.to(flags.device)
             label_vox = label_vox.to(flags.device)
             heatmap = heatmap.to(flags.device)
+            #随机选一个
+            rand_idx= np.random.randint(0,3)
+            label_2d = label_vox[:,rand_idx,:,:]
+            input_vox = event_vox[:,rand_idx,:,:]
+            # label_2d = label_vox[:,0,:,:]
+            # input_vox = event_vox[:,0,:,:]
+
+            #做仿射变换
+            vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
+            label_2d_transform = vox_transform[:,0]
+            input_vox_transform =vox_transform[:,1]
+            
+            #标签转换
+            label_3d = getLabels(label_2d.unsqueeze(1),8)
+            label_3d_transform = getLabels(label_2d_transform.unsqueeze(1),8)
+
+
             optimizer.zero_grad()
 
-            #转换标签,随机挑一个切片
-            # rand_idx= np.random.randint(0,10)
-            # label_3d = getLabels(label_vox[:,rand_idx,:,:].unsqueeze(1),8)
-            # semi, _ = model(event_vox[:,rand_idx,:,:].unsqueeze(1))
-            label_3d = getLabels(label_vox[:,0,:,:].unsqueeze(1),8)
-            semi, _ = model(event_vox[:,0,:,:].unsqueeze(1))
-            # with torch.autograd.detect_anomaly():
-            loss, accuracy = compute_superpoint_loss(semi, label_3d)
-            # loss, accuracy = compute_superpoint_argmax_loss(semi, label_3d)
+            semi, _ = model(input_vox.unsqueeze(1))
+            semi_transform, _ = model(input_vox_transform.unsqueeze(1))
+            
+            loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
+            loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)
+            loss = loss_a+loss_b
+            accuracy = (accuracy_a+accuracy_b)/2
+            
+
             loss.backward()
 
             optimizer.step()

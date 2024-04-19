@@ -4,6 +4,7 @@
 import torch
 from  .d2s import SpaceToDepth,DepthToSpace
 import numpy as np
+import torch.nn.functional as F
 
 #superpoint的标签获取
 def labels2Dto3D_flattened(labels, cell_size):
@@ -184,3 +185,90 @@ def heatmap_nms(heatmap, nms_dist=4, conf_thresh=0.020):
         pts_nms[1, :].astype(np.int), pts_nms[0, :].astype(np.int)
     ] = 1
     return semi_thd_nms_sample
+
+
+def warp_points(points, homographies, device='cpu'):
+    """
+    Warp a list of points with the given homography.
+
+    Arguments:
+        points: list of N points, shape (N, 2(x, y))).
+        homography: batched or not (shapes (B, 3, 3) and (...) respectively).
+
+    Returns: a Tensor of shape (N, 2) or (B, N, 2(x, y)) (depending on whether the homography
+            is batched) containing the new coordinates of the warped points.
+
+    """
+    # expand points len to (x, y, 1)
+    no_batches = len(homographies.shape) == 2
+    homographies = homographies.unsqueeze(0) if no_batches else homographies
+    # homographies = homographies.unsqueeze(0) if len(homographies.shape) == 2 else homographies
+    batch_size = homographies.shape[0]
+    points = torch.cat((points.float(), torch.ones((points.shape[0], 1)).to(device)), dim=1)
+    points = points.to(device)
+    homographies = homographies.view(batch_size*3,3)
+    # warped_points = homographies*points
+    # points = points.double()
+    warped_points = homographies@points.transpose(0,1)
+    # warped_points = np.tensordot(homographies, points.transpose(), axes=([2], [0]))
+    # normalize the points
+    warped_points = warped_points.view([batch_size, 3, -1])
+    warped_points = warped_points.transpose(2, 1)
+    warped_points = warped_points[:, :, :2] / warped_points[:, :, 2:]
+    return warped_points[0,:,:] if no_batches else warped_points
+
+# from utils.utils import inv_warp_image_batch
+def inv_warp_image_batch(img, mat_homo_inv, device='cpu', mode='bilinear'):
+    '''
+    Inverse warp images in batch
+
+    :param img:
+        batch of images
+        tensor [batch_size, 1, H, W]
+    :param mat_homo_inv:
+        batch of homography matrices
+        tensor [batch_size, 3, 3]
+    :param device:
+        GPU device or CPU
+    :return:
+        batch of warped images
+        tensor [batch_size, 1, H, W]
+    '''
+    # compute inverse warped points
+    if len(img.shape) == 2 or len(img.shape) == 3:
+        img = img.view(1,1,img.shape[0], img.shape[1])
+        # img = img.view(img.shape[0],1,img.shape[1], img.shape[2])
+    if len(mat_homo_inv.shape) == 2:
+        mat_homo_inv = mat_homo_inv.view(1,3,3)
+
+    Batch, channel, H, W = img.shape
+    coor_cells = torch.stack(torch.meshgrid(torch.linspace(-1, 1, W), torch.linspace(-1, 1, H)), dim=2)
+    coor_cells = coor_cells.transpose(0, 1)
+    coor_cells = coor_cells.to(device)
+    coor_cells = coor_cells.contiguous()
+
+    src_pixel_coords = warp_points(coor_cells.view([-1, 2]), mat_homo_inv, device)
+    src_pixel_coords = src_pixel_coords.view([Batch, H, W, 2])
+    src_pixel_coords = src_pixel_coords.float()
+
+    warped_img = F.grid_sample(img, src_pixel_coords, mode=mode, align_corners=True)
+    return warped_img
+
+def inv_warp_image(img, mat_homo_inv, device='cpu', mode='bilinear'):
+    '''
+    Inverse warp images in batch
+
+    :param img:
+        batch of images
+        tensor [H, W]
+    :param mat_homo_inv:
+        batch of homography matrices
+        tensor [3, 3]
+    :param device:
+        GPU device or CPU
+    :return:
+        batch of warped images
+        tensor [H, W]
+    '''
+    warped_img = inv_warp_image_batch(img, mat_homo_inv, device, mode)
+    return warped_img.squeeze()
