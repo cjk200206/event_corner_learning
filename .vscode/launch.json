@@ -106,7 +106,7 @@
                 // "../log/superpoint_ckpt/superpoint_04161022.pth",
                 // "log/superpoint_ckpt/superpoint_v1.pth",
                 // "log/superpoint_ckpt/model_best.pth",
-                "../log/superpoint_ckpt/superpoint_04171736_best.pth",
+                "../log/superpoint_ckpt/superpoint_04191951_best.pth",
                 "--output_path",
                 "/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint",
                 "--device",

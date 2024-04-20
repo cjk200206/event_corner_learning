@@ -157,8 +157,8 @@ if __name__ == '__main__':
 
 
         with torch.no_grad():
-            semi, _ = model(input_vox.unsqueeze(1))
-            semi_transform, _ = model(input_vox_transformed.unsqueeze(1))
+            semi, _ = model(input_vox.unsqueeze(1).cuda())
+            semi_transform, _ = model(input_vox_transformed.unsqueeze(1).cuda())
         
             loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
             loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)

@@ -105,16 +105,16 @@ class SuperPointNet(torch.nn.Module):
             # Detector Head.
             cPa = self.relu(self.bnPa(self.convPa(x)))
             semi = self.bnPb(self.convPb(cPa))
-        #     # Descriptor Head.
-        #     cDa = self.relu(self.bnDa(self.convDa(x)))
-        #     desc = self.bnDb(self.convDb(cDa))
+            # Descriptor Head.
+            cDa = self.relu(self.bnDa(self.convDa(x)))
+            desc = self.bnDb(self.convDb(cDa))
 
-        # dn = torch.norm(desc, p=2, dim=1) # Compute the norm.
-        # desc = desc.div(torch.unsqueeze(dn, 1)) # Divide by norm to normalize.
-        # output = {'semi': semi, 'desc': desc}
+            dn = torch.norm(desc, p=2, dim=1) # Compute the norm.
+            desc = desc.div(torch.unsqueeze(dn, 1)) # Divide by norm to normalize.
+            # output = {'semi': semi, 'desc': desc}
             
-            output = semi
-        return output
+            # output = semi
+        return semi,desc
 
 #参照eventpoint,使用superpoint类
 class EventCornerSuperpoint(nn.Module):
@@ -149,9 +149,9 @@ class EventCornerSuperpoint(nn.Module):
         # 输入就是固定的vox
         vox = x
         vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
-        pred = self.backbone.forward(vox_cropped)
+        semi,desc = self.backbone.forward(vox_cropped)
 
-        return pred, vox
+        return semi, desc
 
 # 作为网络局部测试
 if __name__ == '__main__':

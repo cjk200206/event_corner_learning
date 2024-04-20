@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torchmetrics
+from utils.utils.utils import warp_points
 
 def normPts(pts, shape):
     """
@@ -191,7 +192,6 @@ def descriptor_loss(descriptors, descriptors_warped, homographies, mask_valid=No
     # put to gpu
     homographies = homographies.to(device)
     # config
-    from utils.utils import warp_points
     lamda_d = lamda_d # 250
     margin_pos = 1
     margin_neg = 0.2

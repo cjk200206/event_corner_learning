@@ -14,7 +14,7 @@ from utils.dataset import Syn_Superpoint
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
-from utils.loss import compute_vox_loss,compute_superpoint_loss,compute_superpoint_argmax_loss
+from utils.loss import compute_vox_loss,compute_superpoint_loss,compute_superpoint_argmax_loss,descriptor_loss
 from utils.utils.utils import getLabels,add_salt_and_pepper_new,inv_warp_image,inv_warp_image_batch
 from utils.utils.transformation import random_affine_transform
 from utils.utils.homographies import sample_homography_np
@@ -167,11 +167,14 @@ if __name__ == '__main__':
             label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8)
 
             with torch.no_grad():
-                semi, _ = model(input_vox.unsqueeze(1).cuda())
-                semi_transform, _ = model(input_vox_transformed.unsqueeze(1).cuda())
+                semi, desc = model(input_vox.unsqueeze(1).cuda())
+                semi_transform, desc_transform = model(input_vox_transformed.unsqueeze(1).cuda())
             
                 loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
                 loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)
+                homographies = homography.unsqueeze(0).expand(desc.shape[0],-1,-1)
+                mask_valid = torch.ones_like(desc[:,0]).unsqueeze(1)
+                loss_d = descriptor_loss(desc,desc_transform,homographies,mask_valid=mask_valid,device=desc.device)
                 loss = loss_a+loss_b
                 accuracy = (accuracy_a+accuracy_b)/2
 
@@ -200,7 +203,7 @@ if __name__ == '__main__':
             }, "../log/model_best.pth")
             print("New best at ", validation_loss)
 
-        if i % flags.save_every_n_epochs == 0:
+        if (i+1) % flags.save_every_n_epochs == 0:
             state_dict = model.state_dict()
             torch.save({
                 "state_dict": state_dict,
@@ -258,7 +261,7 @@ if __name__ == '__main__':
 
             optimizer.zero_grad()
 
-            semi, _ = model(input_vox.unsqueeze(1).cuda())
+            semi, desc = model(input_vox.unsqueeze(1).cuda())
             semi_transform, _ = model(input_vox_transformed.unsqueeze(1).cuda())
             
             loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
