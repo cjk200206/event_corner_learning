@@ -77,7 +77,7 @@ if __name__ == '__main__':
     # model, and put to device
     model = EventCornerSuperpoint(crop_dimension=(224, 224))
     ckpt = torch.load(flags.checkpoint)
-    model.load_state_dict(ckpt["state_dict"])
+    model.load_state_dict(ckpt["state_dict"],strict=False)
     # model.backbone.load_state_dict(ckpt,strict=False)
     model = model.to(flags.device)
 
@@ -139,9 +139,6 @@ if __name__ == '__main__':
                                            homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
         label_2d_transformed = warped_imgs[:label_2d.size(0),0]
         input_vox_transformed =warped_imgs[label_2d.size(0):,0]
-        label_2d_transformed = torch.where(label_2d_transformed > 0, torch.tensor(1.0).cuda(), label_2d_transformed) #大于0的地方全转到1
-        input_vox_transformed = torch.where(input_vox_transformed > 0, torch.tensor(1.0).cuda(), input_vox_transformed) #大于0的地方全转到1
-
         #裁剪图像
         event_vox_cropped = crop_and_resize_to_resolution(input_vox.unsqueeze(1))
         event_vox_cropped_transformed = crop_and_resize_to_resolution(input_vox_transformed.unsqueeze(1))
@@ -152,6 +149,12 @@ if __name__ == '__main__':
         event_vox_cropped_transformed = add_salt_and_pepper_new(event_vox_cropped_transformed)
         input_vox = add_salt_and_pepper_new(input_vox)
         input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed)
+
+        label_2d_transformed = torch.where(label_2d_transformed.cuda() > 0, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
+        input_vox_transformed = torch.where(input_vox_transformed.cuda() > 0, torch.tensor(1.0).cuda(), input_vox_transformed.cuda()) #大于0的地方全转到1
+        label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
+        input_vox_transformed = torch.where(input_vox_transformed.cuda() < 0, torch.tensor(0.0).cuda(), input_vox_transformed.cuda()) #小于0的地方全转到0
+
         label_3d = getLabels(label_2d,8)
         label_3d_transform = getLabels(label_2d_transformed,8)
 
@@ -177,14 +180,18 @@ if __name__ == '__main__':
                        input_vox_transformed,flatten_semi_transformed,event_vox_cropped_transformed.squeeze(1),label_2d_transformed.squeeze(1)):
             nms_semi = heatmap_nms(nms_heatmap.cpu(),conf_thresh=0.020)
             nms_semi_transformed = heatmap_nms(nms_heatmap_transformed.cpu(),conf_thresh=0.020)
+            label_heatmap = heatmap_nms(label_heatmap.cpu(),conf_thresh=0.020)
+            label_heatmap_transformed = heatmap_nms(label_heatmap_transformed.cpu(),conf_thresh=0.020)
             
             cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi*255)
-            cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
+            # cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
+            cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap*255)
             cv2.imwrite("{}/input_img/{:08d}.jpg".format(flags.output_path,img_num),input_img.cpu().numpy()*255)
             cv2.imwrite("{}/input_img_cropped/{:08d}.jpg".format(flags.output_path,img_num),cropped_img.cpu().numpy()*255)
             #变换后的
             cv2.imwrite("{}/heatmap_transformed/{:08d}.jpg".format(flags.output_path,img_num),nms_semi_transformed*255)
-            cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.cpu().numpy()*255)
+            # cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.cpu().numpy()*255)
+            cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed*255)
             cv2.imwrite("{}/input_img_transformed/{:08d}.jpg".format(flags.output_path,img_num),input_img_transformed.cpu().numpy()*255)
             cv2.imwrite("{}/input_img_cropped_transformed/{:08d}.jpg".format(flags.output_path,img_num),cropped_img_transformed.cpu().numpy()*255)
             img_num += 1

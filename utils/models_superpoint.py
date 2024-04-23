@@ -105,6 +105,7 @@ class SuperPointNet(torch.nn.Module):
             # Detector Head.
             cPa = self.relu(self.bnPa(self.convPa(x)))
             semi = self.bnPb(self.convPb(cPa))
+            # desc = 0 ##仅使用semi
             # Descriptor Head.
             cDa = self.relu(self.bnDa(self.convDa(x)))
             desc = self.bnDb(self.convDb(cDa))
@@ -112,7 +113,6 @@ class SuperPointNet(torch.nn.Module):
             dn = torch.norm(desc, p=2, dim=1) # Compute the norm.
             desc = desc.div(torch.unsqueeze(dn, 1)) # Divide by norm to normalize.
             # output = {'semi': semi, 'desc': desc}
-            
             # output = semi
         return semi,desc
 
