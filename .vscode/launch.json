@@ -4,7 +4,63 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
+        {
+            "name": "process_pseudo_VECtor测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "process_pseudo_label_VECtor.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--test_dataset",
+                "../output/VECtor",
+                "--checkpoint",
+                "../log/superpoint_ckpt/superpoint_05022138_best.pth",
+                "--device",
+                "cuda:0",
+                "--batch_size",
+                "1",
+                "--mode",
+                "predict"
+            ],
+            "cwd": "scripts"
+        },
+        {
+            "name": "process_VECtor测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "preprocess_VECtor.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--event_file","/home/cjk2002/datasets/VECTOR/events",
+                "--output_path","/home/cjk2002/code/event_code/event_corner_learning/output/VECtor"
+            ],
+            "cwd": "scripts"
+        },
+        {
+            "name": "process_pseudo测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "process_pseudo_label.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--test_dataset",
+                "../syn/val/",
+                "--checkpoint",
+                "../log/superpoint_ckpt/superpoint_05022138_best.pth",
+                "--output_path",
+                "/home/cjk2002/code/event_code/event_corner_learning/output/pseudo_label",
+                "--device",
+                "cuda:0",
+                "--batch_size",
+                "1",
+                "--mode",
+                "preprocessed_files"
+            ],
+            "cwd": "scripts"
+        },
         {
             "name": "preprocessing测试",
             "type": "debugpy",
@@ -104,10 +160,10 @@
                 "--test_dataset",
                 "/home/cjk2002/code/syn2e/datasets/test",
                 "--checkpoint",
-                "../log/superpoint_ckpt/superpoint_04161022_best.pth",
+                // "../log/superpoint_ckpt/superpoint_04231822_best.pth",
                 // "log/superpoint_ckpt/superpoint_v1.pth",
                 // "../log/superpoint_ckpt/model_best.pth",
-                // "../log/superpoint_ckpt/superpoint_04191951_best.pth",
+                "../log/superpoint_ckpt/superpoint_05022138_best.pth",
                 "--output_path",
                 "/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint",
                 "--device",

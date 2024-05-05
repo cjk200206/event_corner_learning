@@ -378,6 +378,75 @@ class Syn_Superpoint(Dataset):
 
         return event_vox, label_vox, heatmap
 
+class VECtor(Dataset):
+    """
+        syn_corner数据集通过syn2e建立,具体格式如下：
+        /datasets
+            /train
+                /0
+                    /imgs
+                    /labels
+            /val
+    """
+    def __init__(self,root,mode = "predict"): #这里的root从/train或者/val开始,predict状态直接从两者上级目录开始
+        self.img_paths = [] # e.g. /datasets/train/0/imgs
+        self.label_paths = [] # e.g. /datasets/train/0/labels
+
+        self.mode = mode
+        
+
+        for path, dirs, files in os.walk(root,followlinks=True):
+            if self.mode == "predict":
+                if path.split('/')[-1] == 'imgs':
+                    for file in sorted(listdir(path)): #加入文件/0/imgs/0.jpg -> /0/imgs/xxx.jpg 
+                        self.img_paths.append(join(path,file))
+        
+            elif self.mode == "train":
+                if path.split('/')[-1] == 'imgs':
+                    for file in sorted(listdir(path)): #加入文件/0/imgs/0.jpg -> /0/imgs/xxx.jpg 
+                        self.img_paths.append(join(path,file))
+                elif path.split('/')[-1] == 'labels':
+                    for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
+                        self.label_paths.append(join(path,file))
+                    
+    
+    def __len__(self):
+        return len(self.img_paths)
+    
+    def __getitem__(self, idx):
+        """
+        returns events and event_corners, load from txts
+        :param idx:
+        :return: x,y,t,p  label
+        """
+
+        # 只读入图像
+        if self.mode == "predict":
+            img_path = self.img_paths[idx]
+            img = cv2.imread(img_path,cv2.IMREAD_GRAYSCALE)
+            img = np.array(img)
+
+            label = img
+
+        # 读入事件图和标签
+        elif self.mode == "train":
+            img_path = self.img_paths[idx]
+            img = cv2.imread(img_path,cv2.IMREAD_GRAYSCALE)
+            img = np.array(img)
+
+            label_path = self.label_paths[idx]
+            label = cv2.imread(label_path,cv2.IMREAD_GRAYSCALE)
+            label = np.array(label)
+            
+        img = torch.from_numpy(img).to(torch.float)
+        label = torch.from_numpy(label).to(torch.float)
+
+        img = torch.where(img.cuda() > 0, torch.tensor(1.0).cuda(), img.cuda()) #大于0的地方全转到1
+        img = torch.where(img.cuda() < 0, torch.tensor(0.0).cuda(), img.cuda()) #小于0的地方全转到0
+        label = torch.where(label.cuda() > 0, torch.tensor(1.0).cuda(), label.cuda()) #大于0的地方全转到1
+        label = torch.where(label.cuda() < 0, torch.tensor(0.0).cuda(), label.cuda()) #小于0的地方全转到0
+
+        return img,label,img_path
 
 #临时修改成图片
 class Pic_Superpoint(Dataset):
