@@ -4,7 +4,7 @@ from os.path import join
 import os
 import torch 
 from torch.utils.data import Dataset
-from utils.utils.utils import add_salt_and_pepper_new
+from utils.utils.utils import add_salt_and_pepper_new,get_timesurface
 import cv2
 
 def random_shift_events(events, max_shift=20, resolution=(180, 240)):
@@ -446,8 +446,102 @@ class VECtor(Dataset):
         label = torch.where(label.cuda() > 0, torch.tensor(1.0).cuda(), label.cuda()) #大于0的地方全转到1
         label = torch.where(label.cuda() < 0, torch.tensor(0.0).cuda(), label.cuda()) #小于0的地方全转到0
 
-        return img,label,img_path
+        return img.cpu(),label.cpu(),img_path
 
+class Syn_Superpoint_SAE(Dataset):
+    """
+        syn_corner数据集通过syn2e建立,具体格式如下：
+        /datasets
+            /train
+                /syn_polygon
+                    /augmented_events
+                        /0
+                            /0000000000.txt
+                            /0000000001.txt
+                            /others
+                        /1
+                        /2
+                        /others
+                    /event_corners
+                    /events
+                    /others
+                /syn_mutiple_polygons
+                /others
+            /val
+    """
+    def __init__(self,root,num_time_bins = 1,grid_size=(260, 346),mode = "raw_files",test = False): #这里的root从/train或者/val开始
+        self.events_paths = [] # e.g. /datasets/train/syn_polygon/events/0
+        self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
+        self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
+        self.preprocessed_files = []
+        self.num_time_bins = num_time_bins
+        self.grid_size = grid_size
+        self.mode = mode
+        self.test = test
+
+        for path, dirs, files in os.walk(root,followlinks=True):
+            if self.mode == "raw_files":
+                if path.split('/')[-1] == 'augmented_events':
+                    for dir in sorted(dirs): # 加入文件夹/0 -> /100
+                        self.events_paths.append(join(path,dir))
+                        for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
+                            self.events_files.append(join(path,dir,file))
+                else:
+                    continue
+            elif self.mode == "preprocessed_files":
+                if path.split('/')[-1] == 'preprocessed_sae':
+                    for file in files: #加入文件/preprocessed/00000000.npz
+                        self.preprocessed_files.append(join(path,file))
+                else:
+                    continue
+    
+    def __len__(self):
+        if self.mode == "raw_files":
+            return len(self.events_files)
+        elif self.mode == "preprocessed_files":
+            return len(self.preprocessed_files)
+    
+    def __getitem__(self, idx):
+        """
+        returns events and event_corners, load from txts
+        :param idx:
+        :return: x,y,t,p  label
+        """
+        if self.mode == "raw_files":
+            e_f = self.events_files[idx]
+            augmented_events = np.loadtxt(e_f).astype(np.float32)
+
+            #转换到sae
+            sae = get_timesurface(e_f,img_size=self.grid_size)
+            
+            #将事件转换到vox和heatmap
+            event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
+
+            if self.test == True:
+                #数据增强加噪声
+                # event_vox = add_salt_and_pepper_new(event_vox)
+                pass
+
+            # #原始的事件和label
+            # events = augmented_events[:,0:4]
+            # labels = augmented_events[:,-1].astype(int)
+
+        elif self.mode == "preprocessed_files":
+            loaded_data = np.load(self.preprocessed_files[idx])
+            event_vox = loaded_data["event_vox"]
+            label_vox = loaded_data["label_vox"]
+            heatmap = loaded_data["heatmap"]
+            sae = loaded_data["sae"]
+
+            event_vox = torch.from_numpy(event_vox).squeeze(0)
+            label_vox = torch.from_numpy(label_vox).squeeze(0)
+            heatmap = torch.from_numpy(heatmap).squeeze(0)
+            sae = torch.from_numpy(sae)
+
+            #数据增强加噪声
+            # event_vox = add_salt_and_pepper_new(event_vox)
+
+        return event_vox, label_vox, heatmap, sae
 #临时修改成图片
 class Pic_Superpoint(Dataset):
     """

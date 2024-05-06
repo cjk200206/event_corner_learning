@@ -123,37 +123,32 @@ if __name__ == '__main__':
             #输出热力图
             flatten_semi = flatten_64to1(semi[:,:-1,:,:])
             error_flag = 0
-            try:
-                # Check for NaN semi_transform
-                if torch.isnan(semi_transform[0,0,0,0]):
-                    error_flag = 1
-                    flatten_semi_transformed = flatten_semi
-                    raise ValueError("NaN semi_transform detected")
+    
+            # Check for NaN semi_transform
+            if torch.isnan(semi_transform[0,0,0,0]):
+                error_flag = 1
+                flatten_semi_transformed = flatten_semi
+                print("NaN semi_transform detected")
+            else:
                 flatten_semi_transformed = flatten_64to1(semi_transform[:,:-1,:,:])
 
 
 
-            except ValueError as e:
-                print(f"Exception caught: {e}")
-                print("Skipping current testing iteration...")
-
-                continue  # Skip current iteration and move to next one
-
             # 将HA后的标签合并
             for heatmap,heatmap_transformed in zip(flatten_semi,flatten_semi_transformed):
                 nms_semi = heatmap_nms(heatmap.cpu(),conf_thresh=0.03)
-                nms_semi_transformed = heatmap_nms(heatmap_transformed.cpu(),conf_thresh=0.025)
+                nms_semi_transformed = heatmap_nms(heatmap_transformed.cpu(),conf_thresh=0.03)
                 
                 #将标签逆解
                 warped_semi = inv_warp_image_batch(torch.from_numpy(nms_semi_transformed).unsqueeze(0).unsqueeze(1).cuda(),\
                                         inv_homography.unsqueeze(0).expand(1,-1,-1).cuda(),device=input_vox.device)
                 #保证标签为1
-                warped_semi = torch.where(warped_semi.cuda() >= 0.8, torch.tensor(1.0).cuda(), warped_semi.cuda()) #大于0.8的地方全转到1
-                warped_semi = torch.where(warped_semi.cuda() < 0.8, torch.tensor(0.0).cuda(), warped_semi.cuda()) #小于0.8的地方全转到0
+                warped_semi = torch.where(warped_semi.cuda() >= 0.9, torch.tensor(1.0).cuda(), warped_semi.cuda()) #大于0.9的地方全转到1
+                warped_semi = torch.where(warped_semi.cuda() < 0.9, torch.tensor(0.0).cuda(), warped_semi.cuda()) #小于0.9的地方全转到0
                 #合并
                 nms_semi = torch.from_numpy(nms_semi).unsqueeze(0).cuda()+warped_semi.squeeze(0).cuda()
                 #再做一次nms
-                nms_semi = heatmap_nms(heatmap.cpu(),conf_thresh=0.025)
+                nms_semi = heatmap_nms(heatmap.cpu(),conf_thresh=0.03)
                 nms_semi = torch.from_numpy(nms_semi)
                 nms_semi = torch.where(nms_semi.cuda() > 1, torch.tensor(1.0).cuda(), nms_semi.cuda()) #大于0的地方全转到1
                 nms_semi = torch.where(nms_semi.cuda() < 1, torch.tensor(0.0).cuda(), nms_semi.cuda()) #小于0的地方全转到0

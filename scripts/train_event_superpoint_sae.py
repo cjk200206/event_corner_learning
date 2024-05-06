@@ -10,7 +10,7 @@ import sys
 sys.path.append("../")
 
 from numpy.linalg import inv
-from utils.dataset import Syn_Superpoint
+from utils.dataset import Syn_Superpoint_SAE
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
@@ -43,7 +43,7 @@ def FLAGS():
     parser.add_argument("--mode", default="raw_files")
 
     # logging options
-    parser.add_argument("--log_dir", default="log/superpoint")
+    parser.add_argument("--log_dir", default="log/superpoint_sae")
     parser.add_argument("--pretrained",default=None)
 
     # loader and device options
@@ -79,8 +79,8 @@ if __name__ == '__main__':
     # os.environ["CUDA_VISIBLE_DEVICES"] = '1' #设置显卡可见
     flags = FLAGS()
     # datasets, add augmentation to training set
-    training_dataset = Syn_Superpoint(flags.training_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False,mode=flags.mode)
-    validation_dataset = Syn_Superpoint(flags.validation_dataset,num_time_bins=3,grid_size=(260,346),event_crop=False,mode=flags.mode)
+    training_dataset = Syn_Superpoint_SAE(flags.training_dataset,num_time_bins=1,grid_size=(260,346),mode=flags.mode)
+    validation_dataset = Syn_Superpoint_SAE(flags.validation_dataset,num_time_bins=1,grid_size=(260,346),mode=flags.mode)
 
     # construct loader, handles data streaming to gpu
     training_loader = DataLoader(training_dataset,batch_size=flags.batch_size,
@@ -110,7 +110,7 @@ if __name__ == '__main__':
         "translation": True,
         "rotation": True,
         "scaling": True,
-        "perspective": True,
+        "perspective": False,
         "scaling_amplitude": 0.2,
         "perspective_amplitude_x": 0.2,
         "perspective_amplitude_y": 0.2,
@@ -125,27 +125,22 @@ if __name__ == '__main__':
         model = model.eval()
         print(f"Validation step [{iter:3d}/{flags.num_epochs:3d}]")
         
-        for event_vox,label_vox,heatmap in tqdm.tqdm(validation_loader):
+        for event_vox,label_vox,heatmap,sae in tqdm.tqdm(validation_loader):
             event_vox = crop_and_resize_to_resolution(event_vox)
             heatmap = crop_and_resize_to_resolution(heatmap)
             label_vox = crop_and_resize_to_resolution(label_vox)
+            sae = crop_and_resize_to_resolution(sae)
             # 把数据转到gpu
             event_vox = event_vox.to(flags.device)
             label_vox = label_vox.to(flags.device)
             heatmap = heatmap.to(flags.device)
-            #随机选择
-            rand_idx= np.random.randint(0,3)
-            label_2d = label_vox[:,rand_idx,:,:]
+            sae = sae.to(flags.device)
+            #选择通道
+            label_2d = label_vox[:,0,:,:]
             for i in range(label_2d.shape[0]):
                 label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
-            input_vox = event_vox[:,rand_idx,:,:]
-            # label_2d = label_vox[:,0,:,:]
-            # input_vox = event_vox[:,0,:,:]
-
-            # #做仿射变换
-            # vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
-            # label_2d_transformed = vox_transform[:,0]
-            # input_vox_transformed =vox_transform[:,1]
+            input_vox = sae[:,0,:,:]
+            
 
             #做HA变换
             homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -160,14 +155,9 @@ if __name__ == '__main__':
             for i in range(label_2d_transformed.shape[0]):
                 label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
             input_vox_transformed = warped_imgs[label_2d.size(0):,0]
-            #增加椒盐噪声
-            input_vox = add_salt_and_pepper_new(input_vox)
-            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed)
-
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.9, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
-            input_vox_transformed = torch.where(input_vox_transformed.cuda() >= 0.9, torch.tensor(1.0).cuda(), input_vox_transformed.cuda()) #大于0的地方全转到1
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.9, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
-            input_vox_transformed = torch.where(input_vox_transformed.cuda() < 0.9, torch.tensor(0.0).cuda(), input_vox_transformed.cuda()) #小于0的地方全转到0
+            #保证标签为1
+            label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
+            label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
 
             #转换标签
             label_3d = getLabels(label_2d.unsqueeze(1),8)
@@ -241,27 +231,21 @@ if __name__ == '__main__':
         model = model.train()
         print(f"Training step [{iter:3d}/{flags.num_epochs:3d}]")
 
-        for event_vox,label_vox,heatmap in tqdm.tqdm(training_loader):
+        for event_vox,label_vox,heatmap,sae in tqdm.tqdm(training_loader):
             event_vox = crop_and_resize_to_resolution(event_vox)
             heatmap = crop_and_resize_to_resolution(heatmap)
             label_vox = crop_and_resize_to_resolution(label_vox)
+            sae = crop_and_resize_to_resolution(sae)
             # 把数据转到gpu
             event_vox = event_vox.to(flags.device)
             label_vox = label_vox.to(flags.device)
             heatmap = heatmap.to(flags.device)
+            sae = sae.to(flags.device)
             #随机选一个
-            rand_idx= np.random.randint(0,3)
-            label_2d = label_vox[:,rand_idx,:,:]
+            label_2d = label_vox[:,0,:,:]
             for i in range(label_2d.shape[0]):
                 label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
-            input_vox = event_vox[:,rand_idx,:,:]
-            # label_2d = label_vox[:,0,:,:]
-            # input_vox = event_vox[:,0,:,:]
-
-            # #做仿射变换
-            # vox_transform,_ = random_affine_transform(torch.cat((label_2d.unsqueeze(1),input_vox.unsqueeze(1)),dim=1))
-            # label_2d_transformed = vox_transform[:,0]
-            # input_vox_transformed =vox_transform[:,1]
+            input_vox = event_vox[:,0,:,:]
 
             #做HA变换
             homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -276,15 +260,10 @@ if __name__ == '__main__':
             for i in range(label_2d_transformed.shape[0]):
                 label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
             input_vox_transformed = warped_imgs[label_2d.size(0):,0]
-            #增加椒盐噪声
-            input_vox = add_salt_and_pepper_new(input_vox)
-            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed)
+            #保证标签为1
+            label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
+            label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
 
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.9, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
-            input_vox_transformed = torch.where(input_vox_transformed.cuda() >= 0.9, torch.tensor(1.0).cuda(), input_vox_transformed.cuda()) #大于0的地方全转到1
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.9, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
-            input_vox_transformed = torch.where(input_vox_transformed.cuda() < 0.9, torch.tensor(0.0).cuda(), input_vox_transformed.cuda()) #小于0的地方全转到0
-            
             #标签转换
             label_3d = getLabels(label_2d.unsqueeze(1),8)
             label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8)

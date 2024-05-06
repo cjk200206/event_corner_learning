@@ -54,3 +54,7 @@ class VoxelGrid(EventRepresentation):
                         voxel_grid[mask] = voxel_grid[mask] - mean
 
         return voxel_grid
+
+
+
+

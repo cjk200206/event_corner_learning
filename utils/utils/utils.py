@@ -170,7 +170,7 @@ def nms_fast(in_corners, H, W, dist_thresh):
     out_inds = inds1[inds_keep[inds2]]
     return out, out_inds
 
-def heatmap_nms(heatmap, nms_dist=4, conf_thresh=0.020):
+def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
     """
     input:
         heatmap: np [(1), H, W]
@@ -285,3 +285,34 @@ def inv_warp_image(img, mat_homo_inv, device='cpu', mode='bilinear'):
     '''
     warped_img = inv_warp_image_batch(img, mat_homo_inv, device, mode)
     return warped_img.squeeze()
+
+#SAE图
+def get_timesurface(filename,img_size = (260,346)):
+    infile = open(filename, 'r')
+    ts, x, y, p = [], [], [], []
+    for line in infile:
+        words = line.split()
+        x.append(int(words[0]))
+        y.append(int(words[1]))
+        ts.append(float(words[2])*10e-9)
+        p.append(int(words[3]))
+    infile.close()
+
+    img_size = (260,346)
+
+    # parameters for Time Surface
+    t_ref = ts[-1]      # 'current' time
+    tau = 50e-3         # 50ms
+
+    sae = np.zeros(img_size, np.float32)
+    # calculate timesurface using expotential decay
+    for i in range(len(ts)):
+        if (p[i] > 0):
+            sae[y[i], x[i]] = np.exp(-(t_ref-ts[i]) / tau)
+        else:
+            sae[y[i], x[i]] = -np.exp(-(t_ref-ts[i]) / tau)
+        
+        ## none-polarity Timesurface
+        # sae[y[i], x[i]] = np.exp(-(t_ref-ts[i]) / tau)
+
+    return sae
