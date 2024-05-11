@@ -12,9 +12,7 @@ sys.path.append("../")
 from utils.dataset import Syn_Superpoint_SAE
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
-from utils.models_superpoint import EventCornerSuperpoint
-from utils.loss import compute_vox_loss,compute_superpoint_loss,compute_superpoint_argmax_loss
-from utils.utils.utils import getLabels
+
 from torch.utils.tensorboard import SummaryWriter
 
 def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
@@ -64,28 +62,48 @@ if __name__ == '__main__':
     validation_loader = DataLoader(validation_dataset,batch_size=1,
                                pin_memory=flags.pin_memory,collate_fn=default_collate)
 
-    #建立预处理集
-    preprocessed_train_path=os.path.join(flags.training_dataset,"preprocessed_sae")
-    preprocessed_val_path=os.path.join(flags.validation_dataset,"preprocessed_sae")
-    os.makedirs(preprocessed_train_path,exist_ok=True)
-    os.makedirs(preprocessed_val_path,exist_ok=True)
+    # #建立预处理集
+    # preprocessed_train_path=os.path.join(flags.training_dataset,"preprocessed_sae")
+    # preprocessed_val_path=os.path.join(flags.validation_dataset,"preprocessed_sae")
+    # os.makedirs(preprocessed_train_path,exist_ok=True)
+    # os.makedirs(preprocessed_val_path,exist_ok=True)
 
     val_counter = 0
-    for event_vox,label_vox,heatmap,sae in tqdm.tqdm(validation_loader):
+    for event_vox,label_vox,heatmap,sae_50,sae_75,sae_100,event_file in tqdm.tqdm(validation_loader):
         event_vox = event_vox.numpy()
         label_vox = label_vox.numpy()
         heatmap = heatmap.numpy()
-        sae = sae.numpy()
-        np.savez_compressed("{}/{:08d}.npz".format(preprocessed_val_path,val_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap,sae = sae)
+        sae_50 = sae_50.numpy()
+        sae_75 = sae_75.numpy()
+        sae_100 = sae_100.numpy()
+        # 创建path
+        file_name = event_file[0].split("/")[-1].split(".")[0]
+        file_path = event_file[0].split("/")[0:-1]
+        file_path[-2] = "preprocessed_sae"
+        file_path = "/".join(file_path)
+        if not os.path.exists(file_path):
+            os.makedirs(file_path)
+        np.savez_compressed("{}/{}.npz".format(file_path,file_name),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap,sae_50=sae_50,sae_75=sae_75,sae_100=sae_100)
         val_counter+=1
+    print("{} val data processed!".format(val_counter))
 
     train_counter = 0
-    for event_vox,label_vox,heatmap,sae in tqdm.tqdm(training_loader):
+    for event_vox,label_vox,heatmap,sae_50,sae_75,sae_100,event_file in tqdm.tqdm(training_loader):
         event_vox = event_vox.numpy()
         label_vox = label_vox.numpy()
         heatmap = heatmap.numpy()
-        sae = sae.numpy()
-        np.savez_compressed("{}/{:08d}.npz".format(preprocessed_train_path,train_counter),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap,sae = sae)
+        sae_50 = sae_50.numpy()
+        sae_75 = sae_75.numpy()
+        sae_100 = sae_100.numpy()
+        # 创建path
+        file_name = event_file[0].split("/")[-1].split(".")[0]
+        file_path = event_file[0].split("/")[0:-1]
+        file_path[-2] = "preprocessed_sae"
+        file_path = "/".join(file_path)
+        if not os.path.exists(file_path):
+            os.makedirs(file_path)
+        np.savez_compressed("{}/{}.npz".format(file_path,file_name),event_vox=event_vox,label_vox=label_vox,heatmap=heatmap,sae_50=sae_50,sae_75=sae_75,sae_100=sae_100)
         train_counter+=1
+    print("{} train data processed!".format(train_counter))
 
 

@@ -7,6 +7,7 @@ import os
 import numpy as np
 import torch.nn.functional as F
 import sys
+from math import pi
 sys.path.append("../")
 
 from numpy.linalg import inv
@@ -110,12 +111,13 @@ if __name__ == '__main__':
         "translation": True,
         "rotation": True,
         "scaling": True,
-        "perspective": False,
-        "scaling_amplitude": 0.2,
-        "perspective_amplitude_x": 0.2,
-        "perspective_amplitude_y": 0.2,
-        "allow_artifacts": True,
+        "perspective": True,
+        "scaling_amplitude": 0.1,
+        "perspective_amplitude_x": 0.1,
+        "perspective_amplitude_y": 0.1,
+        "allow_artifacts": False,
         "patch_ratio": 0.85,
+        "max_angle": pi/12
     }
 
     for iter in range(flags.num_epochs):
@@ -125,23 +127,45 @@ if __name__ == '__main__':
         model = model.eval()
         print(f"Validation step [{iter:3d}/{flags.num_epochs:3d}]")
         
-        for event_vox,label_vox,heatmap,sae in tqdm.tqdm(validation_loader):
-            event_vox = crop_and_resize_to_resolution(event_vox)
-            heatmap = crop_and_resize_to_resolution(heatmap)
+        # for _,label_vox,_,sae,_,label_vox_first,_,sae_first in tqdm.tqdm(validation_loader):
+        for event_vox, label_vox, heatmap, sae_50, sae_75, sae_100 in tqdm.tqdm(validation_loader):
+            
+            ########## 以下是不用HA变化
+            # #sae_50+sae_100            
+            # label_vox = label_vox.to(flags.device)
+            # sae_50 = sae_50.to(flags.device)
+            # sae_100 = sae_100.to(flags.device)
+            # label_vox = crop_and_resize_to_resolution(label_vox)
+            # sae_50 = crop_and_resize_to_resolution(sae_50)
+            # sae_100 = crop_and_resize_to_resolution(sae_100)
+
+            # # 选择通道
+            # label_2d = label_vox[:,0,:,:]
+            # for i in range(label_2d.shape[0]):
+            #     label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
+            # input_vox = sae_50[:,0,:,:]
+            # label_2d_transformed = label_2d
+            # input_vox_transformed = sae_100[:,0,:,:]
+
+            # #HA变换设为单位阵，即不变
+            # homography = np.eye(3, 3)
+            # homography = inv(homography)
+            # inv_homography = inv(homography)
+            # inv_homography = torch.tensor(inv_homography).to(torch.float32)
+            # homography = torch.tensor(homography).to(torch.float32).cuda()
+
+            ######### 以下是正常的HA变换
+            # 把数据转到gpu
+            label_vox = label_vox.to(flags.device)
+            sae = sae_50.to(flags.device)
             label_vox = crop_and_resize_to_resolution(label_vox)
             sae = crop_and_resize_to_resolution(sae)
-            # 把数据转到gpu
-            event_vox = event_vox.to(flags.device)
-            label_vox = label_vox.to(flags.device)
-            heatmap = heatmap.to(flags.device)
-            sae = sae.to(flags.device)
-            #选择通道
+            # 选择通道
             label_2d = label_vox[:,0,:,:]
             for i in range(label_2d.shape[0]):
                 label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
             input_vox = sae[:,0,:,:]
             
-
             #做HA变换
             homography = sample_homography_np(np.array([2, 2]),**HA_params)
             homography = inv(homography)
@@ -155,9 +179,14 @@ if __name__ == '__main__':
             for i in range(label_2d_transformed.shape[0]):
                 label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
             input_vox_transformed = warped_imgs[label_2d.size(0):,0]
+            #增加椒盐噪声
+            input_vox = add_salt_and_pepper_new(input_vox,type="sae")
+            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
             #保证标签为1
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
+            for i in range(label_2d_transformed.shape[0]):
+                label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
+            # label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
+            # label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
 
             #转换标签
             label_3d = getLabels(label_2d.unsqueeze(1),8)
@@ -178,7 +207,7 @@ if __name__ == '__main__':
                     mask_valid = torch.ones_like(desc[:,0]).unsqueeze(1)
                     loss_d,_,_,_ = descriptor_loss(desc,desc_transform,homographies,mask_valid=mask_valid,device=desc.device)
                     
-                    loss = loss_a+loss_b+loss_d
+                    loss = loss_a+loss_b+ 0.001*loss_d
                     # loss = loss_a+loss_b
                     accuracy = (accuracy_a+accuracy_b)/2
 
@@ -231,21 +260,43 @@ if __name__ == '__main__':
         model = model.train()
         print(f"Training step [{iter:3d}/{flags.num_epochs:3d}]")
 
-        for event_vox,label_vox,heatmap,sae in tqdm.tqdm(training_loader):
-            event_vox = crop_and_resize_to_resolution(event_vox)
-            heatmap = crop_and_resize_to_resolution(heatmap)
+        for event_vox, label_vox, heatmap, sae_50, sae_75, sae_100 in tqdm.tqdm(training_loader):
+
+            ########## 以下是不用HA变化
+            #sae_50+sae_100            
+            # label_vox = label_vox.to(flags.device)
+            # sae_50 = sae_50.to(flags.device)
+            # sae_100 = sae_100.to(flags.device)
+            # label_vox = crop_and_resize_to_resolution(label_vox)
+            # sae_50 = crop_and_resize_to_resolution(sae_50)
+            # sae_100 = crop_and_resize_to_resolution(sae_100)
+
+            # # 选择通道
+            # label_2d = label_vox[:,0,:,:]
+            # for i in range(label_2d.shape[0]):
+            #     label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
+            # input_vox = sae_50[:,0,:,:]
+            # label_2d_transformed = label_2d
+            # input_vox_transformed = sae_100[:,0,:,:]
+
+            # #HA变换设为单位阵，即不变
+            # homography = np.eye(3, 3)
+            # homography = inv(homography)
+            # inv_homography = inv(homography)
+            # inv_homography = torch.tensor(inv_homography).to(torch.float32)
+            # homography = torch.tensor(homography).to(torch.float32).cuda()
+
+            ########## 以下是正常的HA变换
+            # 把数据转到gpu
+            label_vox = label_vox.to(flags.device)
+            sae = sae_50.to(flags.device)
             label_vox = crop_and_resize_to_resolution(label_vox)
             sae = crop_and_resize_to_resolution(sae)
-            # 把数据转到gpu
-            event_vox = event_vox.to(flags.device)
-            label_vox = label_vox.to(flags.device)
-            heatmap = heatmap.to(flags.device)
-            sae = sae.to(flags.device)
             #随机选一个
             label_2d = label_vox[:,0,:,:]
             for i in range(label_2d.shape[0]):
                 label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
-            input_vox = event_vox[:,0,:,:]
+            input_vox = sae[:,0,:,:]
 
             #做HA变换
             homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -260,9 +311,15 @@ if __name__ == '__main__':
             for i in range(label_2d_transformed.shape[0]):
                 label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
             input_vox_transformed = warped_imgs[label_2d.size(0):,0]
+            #增加椒盐噪声
+            input_vox = add_salt_and_pepper_new(input_vox,type="sae")
+            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
             #保证标签为1
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
-            label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
+            for i in range(label_2d_transformed.shape[0]):
+                label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
+            
+            # label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
+            # label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
 
             #标签转换
             label_3d = getLabels(label_2d.unsqueeze(1),8)
@@ -285,7 +342,7 @@ if __name__ == '__main__':
                 mask_valid = torch.ones_like(desc[:,0]).unsqueeze(1)
                 loss_d,_,_,_ = descriptor_loss(desc,desc_transform,homographies,mask_valid=mask_valid,device=desc.device)
                 
-                loss = loss_a+loss_b+loss_d
+                loss = loss_a+loss_b+0.001*loss_d
                 # loss = loss_a+loss_b
                 accuracy = (accuracy_a+accuracy_b)/2
                 

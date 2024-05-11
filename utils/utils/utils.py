@@ -187,15 +187,21 @@ def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
     return semi_thd_nms_sample
 
 #数据增强,添加椒盐噪声
-def add_salt_and_pepper_new(vox):
+def add_salt_and_pepper_new(vox,type="default"):
     """ Add salt and pepper noise to an image """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     vox = vox.to(device)
     noise = torch.randint(0, 256, size=vox.shape,device=device)
-    # black = noise < 3
-    white = noise > 254
-    vox[white] = 255
-    # vox[black] = 0
+    if type == "default":
+        # black = noise < 3
+        white = noise > 254
+        vox[white] = 255
+        # vox[black] = 0
+    elif type == "sae":
+        # black = noise < 1
+        white = noise > 254
+        vox[white] = torch.from_numpy(np.random.uniform(low=-1, high=1,size=vox[white].shape)).to(torch.float32).cuda()
+        # vox[black] = np.random.uniform(low=-1, high=0,size=vox[black].shape)
 
     return vox.cpu()
 
@@ -287,7 +293,7 @@ def inv_warp_image(img, mat_homo_inv, device='cpu', mode='bilinear'):
     return warped_img.squeeze()
 
 #SAE图
-def get_timesurface(filename,img_size = (260,346)):
+def get_timesurface(filename,img_size = (260,346),tau = 50e-3):
     infile = open(filename, 'r')
     ts, x, y, p = [], [], [], []
     for line in infile:
@@ -299,6 +305,32 @@ def get_timesurface(filename,img_size = (260,346)):
     infile.close()
 
     img_size = (260,346)
+
+    # parameters for Time Surface
+    t_ref = ts[-1]      # 'current' time
+    tau = tau        # 50ms
+
+    sae = np.zeros(img_size, np.float32)
+    # calculate timesurface using expotential decay
+    for i in range(len(ts)):
+        if (p[i] > 0):
+            sae[y[i], x[i]] = np.exp(-(t_ref-ts[i]) / tau)
+        else:
+            sae[y[i], x[i]] = -np.exp(-(t_ref-ts[i]) / tau)
+        
+        ## none-polarity Timesurface
+        # sae[y[i], x[i]] = np.exp(-(t_ref-ts[i]) / tau)
+
+    return sae
+
+def get_timesurface_from_events(x:np.ndarray,y:np.ndarray,ts:np.ndarray,p:np.ndarray,img_size = (260,346),tau = 50e-3):
+    
+    x = x.tolist()
+    y = y.tolist()
+    ts = (ts*10e-6).tolist()
+    p = p.tolist()
+    
+    img_size = img_size
 
     # parameters for Time Surface
     t_ref = ts[-1]      # 'current' time

@@ -9,6 +9,7 @@ import os
 sys.path.append('..')
 
 from utils.scripts.visualization.eventreader import EventReader
+from utils.utils.utils import get_timesurface_from_events
 
 
 def render_for_model(x: np.ndarray, y: np.ndarray, pol: np.ndarray, H: int, W: int) -> np.ndarray:
@@ -46,6 +47,9 @@ if __name__ == '__main__':
     for event_filepath in event_filepaths:
         counter = 0
         os.makedirs(os.path.join(output_path,str(dir_counter),"imgs"),exist_ok=True)
+        os.makedirs(os.path.join(output_path,str(dir_counter),"sae_50"),exist_ok=True)
+        os.makedirs(os.path.join(output_path,str(dir_counter),"sae_75"),exist_ok=True)
+        os.makedirs(os.path.join(output_path,str(dir_counter),"sae_100"),exist_ok=True)
         os.makedirs(os.path.join(output_path,str(dir_counter),"labels"),exist_ok=True)
         for events in tqdm(EventReader(event_filepath, dt)):
             p = events['p']
@@ -53,8 +57,14 @@ if __name__ == '__main__':
             y = events['y']
             t = events['t']
             img = render_for_model(x, y, p, height, width)
-
+            sae_50 = get_timesurface_from_events(x,y,t,p,(height,width),50e-3)
+            sae_75 = get_timesurface_from_events(x,y,t,p,(height,width),75e-3)
+            sae_100 = get_timesurface_from_events(x,y,t,p,(height,width),100e-3)
             cv2.imwrite("{}/{}/imgs/{}.jpg".format(output_path,dir_counter,counter),img)
+            test = (sae_50+1)*127.5
+            cv2.imwrite("{}/{}/sae_50/{}.jpg".format(output_path,dir_counter,counter),(sae_50+1)*127.5)
+            cv2.imwrite("{}/{}/sae_75/{}.jpg".format(output_path,dir_counter,counter),(sae_75+1)*127.5)
+            cv2.imwrite("{}/{}/sae_100/{}.jpg".format(output_path,dir_counter,counter),(sae_100+1)*127.5)
             counter += 1
         dir_counter += 1 
     

@@ -8,6 +8,7 @@ import numpy as np
 import torch.nn.functional as F
 import sys
 import cv2
+from math import pi
 sys.path.append("../")
 
 from numpy.linalg import inv
@@ -37,7 +38,7 @@ def FLAGS():
 
     # test dataset
     parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/val")
-    parser.add_argument("--checkpoint", default="log/superpoint_ckpt/superpoint_05022138_best.pth")
+    parser.add_argument("--checkpoint", default="log/superpoint_ckpt/superpoint_v1.pth")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--pin_memory", type=bool, default=False)
@@ -73,8 +74,13 @@ if __name__ == '__main__':
 
     # model, and put to device
     model = EventCornerSuperpoint(crop_dimension=(480, 640))
+    ## eventpoint
+    # ckpt = torch.load(flags.checkpoint)
+    # model.load_state_dict(ckpt["state_dict"],strict=False)
+    ##superpoint_v1
     ckpt = torch.load(flags.checkpoint)
-    model.load_state_dict(ckpt["state_dict"],strict=False)
+    model.backbone.load_state_dict(ckpt,strict=False)
+
     model = model.to(flags.device)
     model = model.eval()
 
@@ -85,22 +91,27 @@ if __name__ == '__main__':
         "rotation": True,
         "scaling": True,
         "perspective": True,
-        "scaling_amplitude": 0.2,
-        "perspective_amplitude_x": 0.2,
-        "perspective_amplitude_y": 0.2,
-        "allow_artifacts": True,
+        "scaling_amplitude": 0.1,
+        "perspective_amplitude_x": 0.1,
+        "perspective_amplitude_y": 0.1,
+        "allow_artifacts": False,
         "patch_ratio": 0.85,
+        "max_angle": pi/12
     }
 
     img_num = 0
 
-    for img,label,img_path in tqdm.tqdm(test_loader):
+    for img,label,sae_50,sae_75,sae_100,img_path in tqdm.tqdm(test_loader):
         #记录名称
         path_name = str(img_path[0]).split("imgs")
         # 把数据转到gpu
         img = img.to(flags.device)
+        sae_50 = sae_50.to(flags.device)
+        sae_75 = sae_75.to(flags.device)
+        sae_100 = sae_100.to(flags.device)
         # 将事件图维度扩充
-        input_vox = img
+        # input_vox = img
+        input_vox = sae_50
 
         #做HA变换
         homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -146,7 +157,8 @@ if __name__ == '__main__':
                 warped_semi = torch.where(warped_semi.cuda() >= 0.9, torch.tensor(1.0).cuda(), warped_semi.cuda()) #大于0.9的地方全转到1
                 warped_semi = torch.where(warped_semi.cuda() < 0.9, torch.tensor(0.0).cuda(), warped_semi.cuda()) #小于0.9的地方全转到0
                 #合并
-                nms_semi = torch.from_numpy(nms_semi).unsqueeze(0).cuda()+warped_semi.squeeze(0).cuda()
+                nms_semi = torch.from_numpy(nms_semi).unsqueeze(0).cuda()
+                # nms_semi = torch.from_numpy(nms_semi).unsqueeze(0).cuda()+warped_semi.squeeze(0).cuda()
                 #再做一次nms
                 nms_semi = heatmap_nms(heatmap.cpu(),conf_thresh=0.03)
                 nms_semi = torch.from_numpy(nms_semi)

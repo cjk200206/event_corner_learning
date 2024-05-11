@@ -390,6 +390,9 @@ class VECtor(Dataset):
     """
     def __init__(self,root,mode = "predict"): #这里的root从/train或者/val开始,predict状态直接从两者上级目录开始
         self.img_paths = [] # e.g. /datasets/train/0/imgs
+        self.sae_50_paths = [] # e.g. /datasets/train/0/sae_50
+        self.sae_75_paths = [] # e.g. /datasets/train/0/sae_75
+        self.sae_100_paths = [] # e.g. /datasets/train/0/sae_100
         self.label_paths = [] # e.g. /datasets/train/0/labels
 
         self.mode = mode
@@ -400,11 +403,29 @@ class VECtor(Dataset):
                 if path.split('/')[-1] == 'imgs':
                     for file in sorted(listdir(path)): #加入文件/0/imgs/0.jpg -> /0/imgs/xxx.jpg 
                         self.img_paths.append(join(path,file))
+                elif path.split('/')[-1] == 'sae_50':
+                    for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
+                        self.sae_50_paths.append(join(path,file))
+                elif path.split('/')[-1] == 'sae_75':
+                    for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
+                        self.sae_75_paths.append(join(path,file))
+                elif path.split('/')[-1] == 'sae_100':
+                    for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
+                        self.sae_100_paths.append(join(path,file))
         
             elif self.mode == "train":
                 if path.split('/')[-1] == 'imgs':
                     for file in sorted(listdir(path)): #加入文件/0/imgs/0.jpg -> /0/imgs/xxx.jpg 
                         self.img_paths.append(join(path,file))
+                elif path.split('/')[-1] == 'sae_50':
+                    for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
+                        self.sae_50_paths.append(join(path,file))
+                elif path.split('/')[-1] == 'sae_75':
+                    for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
+                        self.sae_75_paths.append(join(path,file))
+                elif path.split('/')[-1] == 'sae_100':
+                    for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
+                        self.sae_100_paths.append(join(path,file))
                 elif path.split('/')[-1] == 'labels':
                     for file in sorted(listdir(path)): #加入文件/0/labels/0.jpg -> /0/labels/xxx.jpg 
                         self.label_paths.append(join(path,file))
@@ -426,6 +447,19 @@ class VECtor(Dataset):
             img = cv2.imread(img_path,cv2.IMREAD_GRAYSCALE)
             img = np.array(img)
 
+            sae_50_path = self.sae_50_paths[idx]
+            sae_50 = cv2.imread(sae_50_path,cv2.IMREAD_GRAYSCALE)
+            sae_50 = np.array(sae_50)
+
+            sae_75_path = self.sae_75_paths[idx]
+            sae_75 = cv2.imread(sae_75_path,cv2.IMREAD_GRAYSCALE)
+            sae_75 = np.array(sae_75)
+
+            sae_100_path = self.sae_100_paths[idx]
+            sae_100 = cv2.imread(sae_100_path,cv2.IMREAD_GRAYSCALE)
+            sae_100 = np.array(sae_100)
+
+
             label = img
 
         # 读入事件图和标签
@@ -434,19 +468,44 @@ class VECtor(Dataset):
             img = cv2.imread(img_path,cv2.IMREAD_GRAYSCALE)
             img = np.array(img)
 
+            sae_50_path = self.sae_50_paths[idx]
+            sae_50 = cv2.imread(sae_50_path,cv2.IMREAD_GRAYSCALE)
+            sae_50 = np.array(sae_50)
+
+            sae_75_path = self.sae_75_paths[idx]
+            sae_75 = cv2.imread(sae_75_path,cv2.IMREAD_GRAYSCALE)
+            sae_75 = np.array(sae_75)
+
+            sae_100_path = self.sae_100_paths[idx]
+            sae_100 = cv2.imread(sae_100_path,cv2.IMREAD_GRAYSCALE)
+            sae_100 = np.array(sae_100)
+
             label_path = self.label_paths[idx]
             label = cv2.imread(label_path,cv2.IMREAD_GRAYSCALE)
             label = np.array(label)
             
         img = torch.from_numpy(img).to(torch.float)
+        sae_50 = torch.from_numpy(sae_50).to(torch.float)
+        sae_75 = torch.from_numpy(sae_75).to(torch.float)
+        sae_100 = torch.from_numpy(sae_100).to(torch.float)
         label = torch.from_numpy(label).to(torch.float)
 
         img = torch.where(img.cuda() > 0, torch.tensor(1.0).cuda(), img.cuda()) #大于0的地方全转到1
         img = torch.where(img.cuda() < 0, torch.tensor(0.0).cuda(), img.cuda()) #小于0的地方全转到0
+        # 转回[-1,1]
+        sae_50 = sae_50/127.5 - 1
+        sae_75 = sae_75/127.5 - 1
+        sae_100 = sae_100/127.5 - 1
+
+        # # 转回[-1,1]
+        # sae_50 = sae_50/255
+        # sae_75 = sae_75/255
+        # sae_100 = sae_100/255
+
         label = torch.where(label.cuda() > 0, torch.tensor(1.0).cuda(), label.cuda()) #大于0的地方全转到1
         label = torch.where(label.cuda() < 0, torch.tensor(0.0).cuda(), label.cuda()) #小于0的地方全转到0
 
-        return img.cpu(),label.cpu(),img_path
+        return img.cpu(),label.cpu(),sae_50,sae_75,sae_100,img_path
 
 class Syn_Superpoint_SAE(Dataset):
     """
@@ -470,10 +529,10 @@ class Syn_Superpoint_SAE(Dataset):
             /val
     """
     def __init__(self,root,num_time_bins = 1,grid_size=(260, 346),mode = "raw_files",test = False): #这里的root从/train或者/val开始
-        self.events_paths = [] # e.g. /datasets/train/syn_polygon/events/0
-        self.event_corners_paths = [] # e.g. /datasets/train/syn_polygon/event_corners/0
         self.events_files = [] # e.g. /datasets/train/syn_polygon/events/0/0000000000.txt
-        self.preprocessed_files = []
+        self.events_files_first = [] # The first file of the list, used for comparison.
+        self.preprocessed_files = [] # e.g. /datasets/train/syn_polygon/preprocessed/0/0000000000.npz
+        self.preprocessed_files_first = [] 
         self.num_time_bins = num_time_bins
         self.grid_size = grid_size
         self.mode = mode
@@ -483,15 +542,19 @@ class Syn_Superpoint_SAE(Dataset):
             if self.mode == "raw_files":
                 if path.split('/')[-1] == 'augmented_events':
                     for dir in sorted(dirs): # 加入文件夹/0 -> /100
-                        self.events_paths.append(join(path,dir))
+                        first_file = sorted(listdir(join(path,dir)))[0]
                         for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.txt -> /0/xxxxxxxx.txt
+                            self.events_files_first.append(join(path,dir,first_file))
                             self.events_files.append(join(path,dir,file))
                 else:
                     continue
             elif self.mode == "preprocessed_files":
                 if path.split('/')[-1] == 'preprocessed_sae':
-                    for file in files: #加入文件/preprocessed/00000000.npz
-                        self.preprocessed_files.append(join(path,file))
+                    for dir in sorted(dirs): # 加入文件夹/0 -> /100
+                        first_file = sorted(listdir(join(path,dir)))[0]
+                        for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.npz -> /0/xxxxxxxx.npz
+                            self.preprocessed_files_first.append(join(path,dir,first_file))
+                            self.preprocessed_files.append(join(path,dir,file))
                 else:
                     continue
     
@@ -510,38 +573,62 @@ class Syn_Superpoint_SAE(Dataset):
         if self.mode == "raw_files":
             e_f = self.events_files[idx]
             augmented_events = np.loadtxt(e_f).astype(np.float32)
-
             #转换到sae
-            sae = get_timesurface(e_f,img_size=self.grid_size)
-            
+            sae_50 = get_timesurface(e_f,img_size=self.grid_size,tau = 50e-3)
+            sae_75 = get_timesurface(e_f,img_size=self.grid_size,tau = 75e-3)
+            sae_100 = get_timesurface(e_f,img_size=self.grid_size,tau = 100e-3)
             #将事件转换到vox和heatmap
             event_vox, label_vox, heatmap = events_to_vox_and_heatmap(augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
 
-            if self.test == True:
-                #数据增强加噪声
-                # event_vox = add_salt_and_pepper_new(event_vox)
-                pass
+            # if self.test == True:
+            #     # 返回参照事件
+            #     first_e_f = self.events_files_first[idx]
+            #     first_augmented_events = np.loadtxt(first_e_f).astype(np.float32)
+            #     #转换到sae
+            #     sae_first = get_timesurface(first_e_f,img_size=self.grid_size)
+            #     #将事件转换到vox和heatmap
+            #     event_vox_first, label_vox_first, heatmap_first = events_to_vox_and_heatmap(first_augmented_events, num_time_bins=self.num_time_bins, grid_size=self.grid_size)
 
-            # #原始的事件和label
-            # events = augmented_events[:,0:4]
-            # labels = augmented_events[:,-1].astype(int)
+
+            #     return event_vox, label_vox, heatmap, sae, event_vox_first, label_vox_first, heatmap_first, sae_first
+                
+            return event_vox, label_vox, heatmap, sae_50, sae_75, sae_100, e_f
+
 
         elif self.mode == "preprocessed_files":
             loaded_data = np.load(self.preprocessed_files[idx])
             event_vox = loaded_data["event_vox"]
             label_vox = loaded_data["label_vox"]
             heatmap = loaded_data["heatmap"]
-            sae = loaded_data["sae"]
+            sae_50 = loaded_data["sae_50"]
+            sae_75 = loaded_data["sae_75"]
+            sae_100 = loaded_data["sae_100"]
 
             event_vox = torch.from_numpy(event_vox).squeeze(0)
             label_vox = torch.from_numpy(label_vox).squeeze(0)
             heatmap = torch.from_numpy(heatmap).squeeze(0)
-            sae = torch.from_numpy(sae)
+            sae_50 = torch.from_numpy(sae_50)
 
-            #数据增强加噪声
-            # event_vox = add_salt_and_pepper_new(event_vox)
+            # loaded_data = np.load(self.preprocessed_files_first[idx])
+            # event_vox_first = loaded_data["event_vox"]
+            # label_vox_first = loaded_data["label_vox"]
+            # heatmap_first = loaded_data["heatmap"]
+            # sae_first = loaded_data["sae"]
 
-        return event_vox, label_vox, heatmap, sae
+            # event_vox_first = torch.from_numpy(event_vox_first).squeeze(0)
+            # label_vox_first = torch.from_numpy(label_vox_first).squeeze(0)
+            # heatmap_first = torch.from_numpy(heatmap_first).squeeze(0)
+            # sae_first = torch.from_numpy(sae_first)
+
+            return event_vox, label_vox, heatmap, sae_50, sae_75, sae_100\
+                #   event_vox_first, label_vox_first, heatmap_first, sae_first
+        
+        else:
+            raise ValueError("use preprocessed_files or raw_files!")
+
+
+
+        
 #临时修改成图片
 class Pic_Superpoint(Dataset):
     """

@@ -12,9 +12,7 @@ sys.path.append("../")
 from utils.dataset import Syn_Superpoint
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
-from utils.models_superpoint import EventCornerSuperpoint
-from utils.loss import compute_vox_loss,compute_superpoint_loss,compute_superpoint_argmax_loss
-from utils.utils.utils import getLabels
+
 from torch.utils.tensorboard import SummaryWriter
 
 def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):

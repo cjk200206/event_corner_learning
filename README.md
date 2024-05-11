@@ -74,4 +74,18 @@ Once trained, the models can be tested by calling the following script:
 
 Which will print the test score after iteration through the whole dataset.
 
-    
+# Added by cjk
+## Pipelines
+Pipeline of event frame superpoint:
+```
+## on syn dataset + VECtor
+preprocess_eventsuperpoint.py --mode raw_files
+train_event_superpoint.py --mode preprocessed_files
+preprocess_VECtor.py
+process_pseudo_VECtor.py --mode predict
+train_event_superpoint_VECtor.py --mode train
+
+## on syn dataset + VECtor (sae)
+preprocess_event_superpoint_sae.py --mode raw_files
+train_event_superpoint_sae.py --mode preprocessed_files
+```
