@@ -15,13 +15,13 @@
                 "--test_dataset",
                 "/home/cjk2002/code/syn2e/datasets/test",
                 "--checkpoint",
-                "../log/superpoint_ckpt/superpoint_05091956_sae_best.pth",
+                "../log/superpoint_ckpt/superpoint_05112043_sae_best.pth",
                 "--output_path",
                 "/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint_sae",
                 "--device",
                 "cuda:0",
                 "--batch_size",
-                "2"
+                "1"
             ],
             "cwd": "scripts"
         },

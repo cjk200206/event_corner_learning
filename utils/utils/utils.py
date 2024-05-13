@@ -348,3 +348,33 @@ def get_timesurface_from_events(x:np.ndarray,y:np.ndarray,ts:np.ndarray,p:np.nda
         # sae[y[i], x[i]] = np.exp(-(t_ref-ts[i]) / tau)
 
     return sae
+
+def sample_desc_from_points(coarse_desc, pts):
+    """
+        pts should be in format like [2,n]
+    """
+    # --- Process descriptor.
+    H, W = coarse_desc.shape[2]*8, coarse_desc.shape[3]*8
+    D = coarse_desc.shape[1]
+    if pts.shape[1] == 0:
+        desc = np.zeros((D, 0))
+    else:
+        # Interpolate into descriptor map using 2D point locations.
+        samp_pts = torch.from_numpy(pts[:2, :].copy()).to(torch.float)
+        samp_pts[0, :] = (samp_pts[0, :] / (float(W) / 2.)) - 1.
+        samp_pts[1, :] = (samp_pts[1, :] / (float(H) / 2.)) - 1.
+        samp_pts = samp_pts.transpose(0, 1).contiguous()
+        samp_pts = samp_pts.view(1, 1, -1, 2)
+        samp_pts = samp_pts.float()
+        samp_pts = samp_pts.cuda()
+        desc = torch.nn.functional.grid_sample(coarse_desc, samp_pts, align_corners=True)
+        desc = desc.data.cpu().numpy().reshape(D, -1)
+        desc /= np.linalg.norm(desc, axis=0)[np.newaxis, :]
+    return desc
+
+def warp_keypoints(keypoints, H):
+    num_points = keypoints.shape[0]
+    homogeneous_points = np.concatenate([keypoints, np.ones((num_points, 1))],
+                                        axis=1)
+    warped_points = np.dot(homogeneous_points, np.transpose(H))
+    return warped_points[:, :2] / warped_points[:, 2:]
