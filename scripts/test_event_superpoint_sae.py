@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
 from utils.loss import compute_vox_loss,compute_superpoint_loss
-from utils.evaluation import compute_detection_correctness,compute_detection_repeatability
+from utils.evaluation import compute_detection_correctness,compute_detection_repeatability,compute_descriptor_Nearest_neighbour_mAP
 from utils.utils.utils import getLabels,heatmap_nms,inv_warp_image,inv_warp_image_batch,add_salt_and_pepper_new
 from utils.utils.transformation import random_affine_transform
 from utils.utils.homographies import sample_homography_np
@@ -94,6 +94,8 @@ if __name__ == '__main__':
     sum_dist = 0
     rep_match_numbers = 0
     rep_gt_numbers = 0
+    desc_num = 0
+    total_match_num = 0
 
     #建文件夹
     os.makedirs(flags.output_path + "/heatmap",exist_ok=True)
@@ -162,8 +164,8 @@ if __name__ == '__main__':
         label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8)
 
         with torch.no_grad():
-            semi, _ = model(input_vox.unsqueeze(1).cuda())
-            semi_transform, _ = model(input_vox_transformed.unsqueeze(1).cuda())
+            semi, desc = model(input_vox.unsqueeze(1).cuda())
+            semi_transform, desc_transformed = model(input_vox_transformed.unsqueeze(1).cuda())
         
             loss_a, accuracy_a = compute_superpoint_loss(semi, label_3d)
             loss_b, accuracy_b = compute_superpoint_loss(semi_transform, label_3d_transform)
@@ -176,10 +178,10 @@ if __name__ == '__main__':
         flatten_semi = flatten_64to1(semi[:,:-1,:,:])
         flatten_semi_transformed = flatten_64to1(semi_transform[:,:-1,:,:])
 
-        for input_img,nms_heatmap,label_heatmap,\
-            input_img_transformed,nms_heatmap_transformed,label_heatmap_transformed \
-                in zip(input_vox,flatten_semi,label_2d.squeeze(1),\
-                       input_vox_transformed,flatten_semi_transformed,label_2d_transformed.squeeze(1)):
+        for input_img,nms_heatmap,label_heatmap,desc_1,\
+            input_img_transformed,nms_heatmap_transformed,label_heatmap_transformed,desc_2 \
+                in zip(input_vox,flatten_semi,label_2d.squeeze(1),desc,\
+                       input_vox_transformed,flatten_semi_transformed,label_2d_transformed.squeeze(1),desc_transformed):
             nms_semi = heatmap_nms(nms_heatmap.cpu(),conf_thresh=0.020)
             nms_semi_transformed = heatmap_nms(nms_heatmap_transformed.cpu(),conf_thresh=0.020)
             label_heatmap = heatmap_nms(label_heatmap.cpu(),conf_thresh=0.020)
@@ -188,17 +190,45 @@ if __name__ == '__main__':
             #将预测结果变回来
             inv_warped_semi = inv_warp_image(torch.from_numpy(nms_semi_transformed),inv_homography)
             inv_warped_semi = heatmap_nms(inv_warped_semi.cpu(),conf_thresh=0.020)
+            
+            # #将预测结果变回来
+            # #获取点
+            # transformed_pnts = torch.nonzero(torch.from_numpy(nms_semi_transformed))
+            # W=224
+            # H=224
+            # #把点o变到和原图一样
+            # transformed_pnts_sample = transformed_pnts.clone().to(torch.float)
+            # transformed_pnts_sample[:,0] = (transformed_pnts_sample[:,0]/(float(W)/2.)) - 1.
+            # transformed_pnts_sample[:,1] = (transformed_pnts_sample[:,1]/(float(H)/2.)) - 1.
+            # inv_transformed_pnts_sample = warp_points(transformed_pnts_sample,inv_homography)
+            # inv_transformed_pnts_sample[:,0] = ((inv_transformed_pnts_sample[:,0]+1)*(float(W)/2.)).to(torch.int)
+            # inv_transformed_pnts_sample[:,1] = ((inv_transformed_pnts_sample[:,1]+1)*(float(H)/2.)).to(torch.int)
+            # #填充成图
+            # inv_warped_semi = torch.zeros_like(torch.from_numpy(nms_semi_transformed))
+            # #筛除越界点
+            # valid_indices = (inv_transformed_pnts_sample[:, 0] >= 0) & (inv_transformed_pnts_sample[:, 0] < W) & \
+            #         (inv_transformed_pnts_sample[:, 1] >= 0) & (inv_transformed_pnts_sample[:, 1] < H)
+            # inv_transformed_pnts_sample = inv_transformed_pnts_sample[valid_indices]
+            # inv_warped_semi[inv_transformed_pnts_sample.to(torch.long)[:,0],inv_transformed_pnts_sample.to(torch.long)[:,1]] = 1
+            # inv_warped_semi = inv_warped_semi.numpy()
+
+
+
 
             ## 评价指标计算
             matches,pred,gt,dist = compute_detection_correctness(torch.from_numpy(nms_semi),torch.from_numpy(label_heatmap))
             rep_matches,rep_gt = compute_detection_repeatability(torch.from_numpy(nms_semi),torch.from_numpy(inv_warped_semi))
-            
+            num_1,num_2 = compute_descriptor_Nearest_neighbour_mAP(desc_1,desc_2,torch.from_numpy(nms_semi),torch.from_numpy(inv_warped_semi),homography,inv_homography)
+
+
             rep_match_numbers += rep_matches
             rep_gt_numbers += rep_gt
             match_numbers += len(matches)
             pred_numbers += len(pred)
             gt_numbers += len(gt)
             sum_dist += dist
+            total_match_num += num_2
+            desc_num += num_1
 
             cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi*255)
             # cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
@@ -221,9 +251,10 @@ if __name__ == '__main__':
     test_precision = match_numbers / pred_numbers
     localization_error = sum_dist/match_numbers
     repeatability = rep_match_numbers/rep_gt_numbers
+    NN_mAP = desc_num/total_match_num
 
     print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}, \
-          \nTest Recall: {test_recall}, Test Precision: {test_precision}, Localization Error: {localization_error}, Repeatability: {repeatability}")
+          \nTest Recall: {test_recall}, Test Precision: {test_precision}, Localization Error: {localization_error}, Repeatability: {repeatability}, NN_mAP: {NN_mAP}")
 
         
 
