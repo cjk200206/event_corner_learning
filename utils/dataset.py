@@ -4,8 +4,27 @@ from os.path import join
 import os
 import torch 
 from torch.utils.data import Dataset
-from utils.utils.utils import add_salt_and_pepper_new,get_timesurface
+from utils.utils.utils import add_salt_and_pepper_new,get_timesurface,getLabels,inv_warp_image,inv_warp_image_batch,heatmap_nms
+from utils.utils.homographies import sample_homography_np
+from numpy.linalg import inv
+from math import pi
+import torch.nn.functional as F
 import cv2
+
+import tqdm
+
+def crop_and_resize_to_resolution(x, output_resolution=(224, 224)):
+    B, C, H, W = x.shape
+    if H > W:
+        h = H // 2
+        x = x[:, :, h - W // 2:h + W // 2, :]
+    else:
+        h = W // 2
+        x = x[:, :, :, h - H // 2:h + H // 2]
+
+    x = F.interpolate(x, size=output_resolution)
+
+    return x
 
 def random_shift_events(events, max_shift=20, resolution=(180, 240)):
     H, W = resolution
@@ -538,6 +557,28 @@ class Syn_Superpoint_SAE(Dataset):
         self.mode = mode
         self.test = test
 
+
+        self.label_vox = []
+        self.sae_50 = []
+        self.preprocessed_label_3d = []
+        self.preprocessed_label_3d_transformed = []
+        self.preprocessed_input_vox = []
+        self.preprocessed_input_vox_transformed = []
+        self.homography = []
+
+        HA_params = {
+            "translation": True,
+            "rotation": True,
+            "scaling": True,
+            "perspective": True,
+            "scaling_amplitude": 0.1,
+            "perspective_amplitude_x": 0.1,
+            "perspective_amplitude_y": 0.1,
+            "allow_artifacts": False,
+            "patch_ratio": 0.85,
+            "max_angle": pi/12
+        }
+
         for path, dirs, files in os.walk(root,followlinks=True):
             if self.mode == "raw_files":
                 if path.split('/')[-1] == 'augmented_events':
@@ -557,12 +598,74 @@ class Syn_Superpoint_SAE(Dataset):
                             self.preprocessed_files.append(join(path,dir,file))
                 else:
                     continue
+            elif self.mode == "preprocessed_files_server":
+                if path.split('/')[-1] == 'preprocessed_sae':
+                    for dir in tqdm.tqdm(sorted(dirs)): # 加入文件夹/0 -> /100
+                        first_file = sorted(listdir(join(path,dir)))[0]
+                        for file in sorted(listdir(join(path,dir))): #加入文件/0/00000000.npz -> /0/xxxxxxxx.npz
+                            self.preprocessed_files_first.append(join(path,dir,first_file))
+                            self.preprocessed_files.append(join(path,dir,file))
+                            data = np.load(join(path,dir,file))
+                            label_vox = torch.from_numpy(data["label_vox"]).cpu()
+                            sae_50 = torch.from_numpy(data["sae_50"]).cpu().unsqueeze(0)
+
+                            self.label_vox.append(label_vox)
+                            self.sae_50.append(sae_50)
+
+                            # ######### 以下是正常的HA变换
+                            # # 把数据转到gpu
+                            # label_vox = label_vox.cpu()
+                            # sae = sae_50.cpu()
+                            # label_vox = crop_and_resize_to_resolution(label_vox)
+                            # sae = crop_and_resize_to_resolution(sae)
+                            # # 选择通道
+                            # label_2d = label_vox[:,0,:,:]
+                            # for i in range(label_2d.shape[0]):
+                            #     label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
+                            # input_vox = sae[:,0,:,:]
+                            
+                            # #做HA变换
+                            # homography = sample_homography_np(np.array([2, 2]),**HA_params)
+                            # homography = inv(homography)
+                            # inv_homography = inv(homography)
+                            # inv_homography = torch.tensor(inv_homography).to(torch.float32)
+                            # homography = torch.tensor(homography).to(torch.float32).cpu()
+                            # #images
+                            # warped_imgs = inv_warp_image_batch(torch.cat((label_2d,input_vox),dim=0).unsqueeze(1),\
+                            #                                 homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
+                            # label_2d_transformed = warped_imgs[:label_2d.size(0),0]
+                            # for i in range(label_2d_transformed.shape[0]):
+                            #     label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
+                            # input_vox_transformed = warped_imgs[label_2d.size(0):,0]
+                            # #增加椒盐噪声
+                            # input_vox = add_salt_and_pepper_new(input_vox,type="sae").unsqueeze(1).cpu()
+                            # input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae").unsqueeze(1).cpu()
+                            # #保证标签为1
+                            # for i in range(label_2d_transformed.shape[0]):
+                            #     label_2d_transformed[i] = torch.from_numpy(heatmap_nms(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
+
+                            # #转换标签
+                            # label_3d = getLabels(label_2d.unsqueeze(1),8).cpu()
+                            # label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8).cpu()
+
+                            # self.preprocessed_input_vox.append(input_vox)
+                            # self.preprocessed_input_vox_transformed.append(input_vox_transformed)
+                            # self.preprocessed_label_3d.append(label_3d)
+                            # self.preprocessed_label_3d_transformed.append(label_3d_transform)
+                            # self.homography.append(homography)
+
+
+                else:
+                    continue
     
     def __len__(self):
         if self.mode == "raw_files":
             return len(self.events_files)
         elif self.mode == "preprocessed_files":
             return len(self.preprocessed_files)
+        elif self.mode == "preprocessed_files_server":
+            return len(self.label_vox)
+            # return len(self.preprocessed_input_vox)
     
     def __getitem__(self, idx):
         """
@@ -622,6 +725,22 @@ class Syn_Superpoint_SAE(Dataset):
 
             return event_vox, label_vox, heatmap, sae_50, sae_75, sae_100\
                 #   event_vox_first, label_vox_first, heatmap_first, sae_first
+        
+        elif self.mode == "preprocessed_files_server":
+
+            # input_vox = self.preprocessed_input_vox[idx]
+            # input_vox_transformed = self.preprocessed_input_vox_transformed[idx]
+            # label_3d = self.preprocessed_label_3d[idx]
+            # label_3d_transform = self.preprocessed_label_3d_transformed[idx]
+            # homography = self.homography[idx]
+            
+            # return input_vox,input_vox_transformed,label_3d,label_3d_transform,homography
+
+            label_vox = self.label_vox[idx].squeeze(1)
+            sae_50 = self.sae_50[idx].squeeze(1)
+
+            return label_vox,sae_50
+
         
         else:
             raise ValueError("use preprocessed_files or raw_files!")

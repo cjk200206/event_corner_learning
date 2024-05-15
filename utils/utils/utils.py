@@ -78,8 +78,8 @@ def getLabels(labels_2D, cell_size, device="cpu"):
     labels3D_in_loss = labels3D_flattened
     return labels3D_in_loss
 
-#做nms
-def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
+#做nms old
+def getPtsFromHeatmap_old(heatmap, conf_thresh, nms_dist):
     '''
     :param self:
     :param heatmap:
@@ -98,7 +98,7 @@ def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
     pts[0, :] = ys
     pts[1, :] = xs
     pts[2, :] = heatmap[xs, ys]
-    pts, _ = nms_fast(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
+    pts, _ = nms_fast_old(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
     inds = np.argsort(pts[2, :])
     pts = pts[:, inds[::-1]]  # Sort by confidence.
     # Remove points along border.
@@ -109,7 +109,7 @@ def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
     pts = pts[:, ~toremove]
     return pts
 
-def nms_fast(in_corners, H, W, dist_thresh):
+def nms_fast_old(in_corners, H, W, dist_thresh):
     """
     Run a faster approximate Non-Max-Suppression on numpy corners shaped:
       3xN [x_i,y_i,conf_i]^T
@@ -170,7 +170,7 @@ def nms_fast(in_corners, H, W, dist_thresh):
     out_inds = inds1[inds_keep[inds2]]
     return out, out_inds
 
-def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
+def heatmap_nms_old(heatmap, nms_dist=8, conf_thresh=0.020):
     """
     input:
         heatmap: np [(1), H, W]
@@ -179,12 +179,130 @@ def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
     # conf_thresh = self.config['model']['detection_threshold']
     heatmap = heatmap.squeeze()
     # print("heatmap: ", heatmap.shape)
-    pts_nms = getPtsFromHeatmap(heatmap, conf_thresh, nms_dist)
+    pts_nms = getPtsFromHeatmap_old(heatmap, conf_thresh, nms_dist)
     semi_thd_nms_sample = np.zeros_like(heatmap)
     semi_thd_nms_sample[
         pts_nms[1, :].astype(np.int), pts_nms[0, :].astype(np.int)
     ] = 1
     return semi_thd_nms_sample
+
+def nms_fast(in_corners, H, W, dist_thresh):
+    """
+    Run a faster approximate Non-Max-Suppression on tensor corners shaped:
+      3xN [x_i,y_i,conf_i]^T
+    Algo summary: Create a grid sized HxW. Assign each corner location a 1, rest
+    are zeros. Iterate through all the 1's and convert them either to -1 or 0.
+    Suppress points by setting nearby values to 0.
+    Grid Value Legend:
+    -1 : Kept.
+     0 : Empty or suppressed.
+     1 : To be processed (converted to either kept or suppressed).
+    NOTE: The NMS first rounds points to integers, so NMS distance might not
+    be exactly dist_thresh. It also assumes points are within image boundaries.
+    Inputs
+      in_corners - 3xN tensor with corners [x_i, y_i, confidence_i]^T.
+      H - Image height.
+      W - Image width.
+      dist_thresh - Distance to suppress, measured as an infinity norm distance.
+    Returns
+      nmsed_corners - 3xN tensor with surviving corners.
+      nmsed_inds - N length tensor with surviving corner indices.
+    """
+    device = in_corners.device
+    grid = torch.zeros((H, W), dtype=torch.int, device=device)  # Track NMS data.
+    inds = torch.zeros((H, W), dtype=torch.int, device=device)  # Store indices of points.
+
+    # Sort by confidence and round to nearest int.
+    inds1 = torch.argsort(-in_corners[2, :])
+    corners = in_corners[:, inds1]
+    rcorners = corners[:2, :].round().to(torch.int)  # Rounded corners.
+
+    # Check for edge case of 0 or 1 corners.
+    if rcorners.shape[1] == 0:
+        return torch.zeros((3, 0), dtype=torch.int, device=device), torch.zeros(0, dtype=torch.int, device=device)
+    if rcorners.shape[1] == 1:
+        out = torch.cat((rcorners, in_corners[2].view(1, -1)), dim=0).view(3, 1)
+        return out, torch.zeros(1, dtype=torch.int, device=device)
+
+    # Initialize the grid.
+    for i, rc in enumerate(rcorners.T):
+        grid[rc[1], rc[0]] = 1
+        inds[rc[1], rc[0]] = i
+
+    # Pad the border of the grid, so that we can NMS points near the border.
+    pad = dist_thresh
+    grid = torch.nn.functional.pad(grid, (pad, pad, pad, pad), mode='constant', value=0)
+
+    # Iterate through points, highest to lowest conf, suppress neighborhood.
+    count = 0
+    for i, rc in enumerate(rcorners.T):
+        # Account for top and left padding.
+        pt = (rc[0] + pad, rc[1] + pad)
+        if grid[pt[1], pt[0]] == 1:  # If not yet suppressed.
+            grid[pt[1] - pad:pt[1] + pad + 1, pt[0] - pad:pt[0] + pad + 1] = 0
+            grid[pt[1], pt[0]] = -1
+            count += 1
+
+    # Get all surviving -1's and return sorted array of remaining corners.
+    keepy, keepx = torch.where(grid == -1)
+    keepy, keepx = keepy - pad, keepx - pad
+    inds_keep = inds[keepy, keepx].to(torch.long)
+    out = corners[:, inds_keep]
+    values = out[-1, :]
+    inds2 = torch.argsort(-values)
+    out = out[:, inds2]
+    out_inds = inds1[inds_keep[inds2]]
+
+    return out, out_inds
+
+
+def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
+    """
+    :param heatmap: torch tensor (H, W)
+    :return:
+    """
+
+    device = heatmap.device
+    border_remove = 4
+
+    H, W = heatmap.shape[0], heatmap.shape[1]
+    xs, ys = torch.where(heatmap >= conf_thresh)  # Confidence threshold.
+    sparsemap = (heatmap >= conf_thresh)
+    if xs.numel() == 0:
+        return torch.zeros((3, 0))
+    pts = torch.zeros((3, xs.numel()),device=device)  # Populate point data sized 3xN.
+    pts[0, :] = ys
+    pts[1, :] = xs
+    pts[2, :] = heatmap[xs, ys]
+    pts, _ = nms_fast(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
+    inds = torch.argsort(pts[2, :])
+    pts = pts[:, inds.flip(0)]  # Sort by confidence.
+    # Remove points along border.
+    bord = border_remove
+    toremoveW = torch.logical_or(pts[0, :] < bord, pts[0, :] >= (W - bord))
+    toremoveH = torch.logical_or(pts[1, :] < bord, pts[1, :] >= (H - bord))
+    toremove = torch.logical_or(toremoveW, toremoveH)
+    pts = pts[:, ~toremove]
+    return pts
+
+
+def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
+    """
+    input:
+        heatmap: torch tensor [(1), H, W]
+    """
+    # nms_dist = self.config['model']['nms']
+    # conf_thresh = self.config['model']['detection_threshold']
+    heatmap = heatmap.squeeze()
+    # print("heatmap: ", heatmap.shape)
+    pts_nms = getPtsFromHeatmap(heatmap, conf_thresh, nms_dist).to(torch.long)
+    semi_thd_nms_sample = torch.zeros_like(heatmap)
+    semi_thd_nms_sample[
+        pts_nms[1, :], pts_nms[0, :]
+    ] = 1
+    return semi_thd_nms_sample
+
+
 
 #数据增强,添加椒盐噪声
 def add_salt_and_pepper_new(vox,type="default"):
@@ -200,7 +318,7 @@ def add_salt_and_pepper_new(vox,type="default"):
     elif type == "sae":
         # black = noise < 1
         white = noise > 254
-        vox[white] = torch.from_numpy(np.random.uniform(low=-1, high=1,size=vox[white].shape)).to(torch.float32).cuda()
+        vox[white] = 2 * torch.rand(vox[white].shape,device=device) - 1
         # vox[black] = np.random.uniform(low=-1, high=0,size=vox[black].shape)
 
     return vox.cpu()
@@ -261,7 +379,7 @@ def inv_warp_image_batch(img, mat_homo_inv, device='cpu', mode='bilinear'):
         mat_homo_inv = mat_homo_inv.view(1,3,3)
 
     Batch, channel, H, W = img.shape
-    coor_cells = torch.stack(torch.meshgrid(torch.linspace(-1, 1, W), torch.linspace(-1, 1, H)), dim=2)
+    coor_cells = torch.stack(torch.meshgrid(torch.linspace(-1, 1, W,device=device), torch.linspace(-1, 1, H,device=device)), dim=2)
     coor_cells = coor_cells.transpose(0, 1)
     coor_cells = coor_cells.to(device)
     coor_cells = coor_cells.contiguous()

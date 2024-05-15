@@ -18,7 +18,7 @@ from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
 from utils.loss import compute_vox_loss,compute_superpoint_loss
 from utils.evaluation import compute_detection_correctness,compute_detection_repeatability,compute_descriptor_Nearest_neighbour_mAP
-from utils.utils.utils import getLabels,heatmap_nms,inv_warp_image,inv_warp_image_batch,add_salt_and_pepper_new
+from utils.utils.utils import getLabels,heatmap_nms,heatmap_nms_old,inv_warp_image,inv_warp_image_batch,add_salt_and_pepper_new
 from utils.utils.transformation import random_affine_transform
 from utils.utils.homographies import sample_homography_np
 from utils.utils.d2s import flatten_64to1
@@ -132,6 +132,10 @@ if __name__ == '__main__':
         sae = crop_and_resize_to_resolution(sae.unsqueeze(1),(224,224))
         label_2d = label_vox[:,0,:,:]
         input_vox = sae[:,0,:,:]
+        for i in range(label_2d.shape[0]):
+            # label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
+            label_2d[i] = heatmap_nms(label_2d[i]) #给标签使用nms，筛除噪点
+
         # #取出比对组
         # label_vox_first = label_vox_first.to(flags.device)
         # sae_first = sae_first.to(flags.device)
@@ -156,12 +160,15 @@ if __name__ == '__main__':
         input_vox = add_salt_and_pepper_new(input_vox,type="sae")
         input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
         #保证标签为1
-        label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
-        label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
+        for i in range(label_2d_transformed.shape[0]):
+            # label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
+            label_2d_transformed[i] = heatmap_nms(label_2d_transformed[i]) #给标签使用nms，筛除噪点
+        # label_2d_transformed = torch.where(label_2d_transformed.cuda() >= 0.8, torch.tensor(1.0).cuda(), label_2d_transformed.cuda()) #大于0的地方全转到1
+        # label_2d_transformed = torch.where(label_2d_transformed.cuda() < 0.8, torch.tensor(0.0).cuda(), label_2d_transformed.cuda()) #小于0的地方全转到0
 
         #转换标签
-        label_3d = getLabels(label_2d.unsqueeze(1),8)
-        label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8)
+        label_3d = getLabels(label_2d.unsqueeze(1),8).cuda()
+        label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8).cuda()
 
         with torch.no_grad():
             semi, desc = model(input_vox.unsqueeze(1).cuda())
@@ -188,7 +195,7 @@ if __name__ == '__main__':
             label_heatmap_transformed = heatmap_nms(label_heatmap_transformed.cpu(),conf_thresh=0.020)
             
             #将预测结果变回来
-            inv_warped_semi = inv_warp_image(torch.from_numpy(nms_semi_transformed),inv_homography)
+            inv_warped_semi = inv_warp_image(nms_semi_transformed,inv_homography)
             inv_warped_semi = heatmap_nms(inv_warped_semi.cpu(),conf_thresh=0.020)
             
             # #将预测结果变回来
@@ -216,9 +223,9 @@ if __name__ == '__main__':
 
 
             ## 评价指标计算
-            matches,pred,gt,dist = compute_detection_correctness(torch.from_numpy(nms_semi),torch.from_numpy(label_heatmap))
-            rep_matches,rep_gt = compute_detection_repeatability(torch.from_numpy(nms_semi),torch.from_numpy(inv_warped_semi))
-            num_1,num_2 = compute_descriptor_Nearest_neighbour_mAP(desc_1,desc_2,torch.from_numpy(nms_semi),torch.from_numpy(inv_warped_semi),homography,inv_homography)
+            matches,pred,gt,dist = compute_detection_correctness(nms_semi,label_heatmap)
+            rep_matches,rep_gt = compute_detection_repeatability(nms_semi,inv_warped_semi)
+            num_1,num_2 = compute_descriptor_Nearest_neighbour_mAP(desc_1,desc_2,nms_semi,inv_warped_semi,homography,inv_homography)
 
 
             rep_match_numbers += rep_matches
@@ -230,14 +237,14 @@ if __name__ == '__main__':
             total_match_num += num_2
             desc_num += num_1
 
-            cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi*255)
+            cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi.numpy()*255)
             # cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
-            cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap*255)
+            cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.numpy()*255)
             cv2.imwrite("{}/input_img/{:08d}.jpg".format(flags.output_path,img_num),(input_img.cpu().numpy()+1)*127.5)
             #变换后的
-            cv2.imwrite("{}/heatmap_transformed/{:08d}.jpg".format(flags.output_path,img_num),nms_semi_transformed*255)
+            cv2.imwrite("{}/heatmap_transformed/{:08d}.jpg".format(flags.output_path,img_num),nms_semi_transformed.numpy()*255)
             # cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.cpu().numpy()*255)
-            cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed*255)
+            cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.numpy()*255)
             cv2.imwrite("{}/input_img_transformed/{:08d}.jpg".format(flags.output_path,img_num),(input_img_transformed.cpu().numpy()+1)*127.5)
 
             img_num += 1

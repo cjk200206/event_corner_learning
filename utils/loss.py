@@ -151,10 +151,12 @@ def compute_superpoint_loss(vox, label_3d):
     acc = 0
     accuracy = torchmetrics.Accuracy()
     bce_loss = torch.nn.BCELoss(reduction="none")
+    accuracy.cuda()
+    bce_loss.cuda()
     shape = vox.shape[2]*vox.shape[3]
     focal_loss = FocalLoss()
     for i in range(batch_size):
-        loss += bce_loss(softmaxed_vox[i].cpu(), label_3d[i].cpu()).sum()/shape ###????????相当于是所有3d格子求和，再对特征图的面积求平均
+        loss += bce_loss(softmaxed_vox[i], label_3d[i]).sum()/shape ###????????相当于是所有3d格子求和，再对特征图的面积求平均
         # loss += focal_loss(softmaxed_vox[i].cpu().view(65,-1).permute(1,0), label_3d[i].cpu().view(65,-1).permute(1,0))
     loss /= batch_size
 
@@ -162,7 +164,7 @@ def compute_superpoint_loss(vox, label_3d):
     predicted_classes = torch.argmax(softmaxed_vox, dim=1)
     # 计算真实的类别
     true_classes = torch.argmax(label_3d,dim=1)
-    acc = accuracy(predicted_classes.cpu().view(-1), true_classes.cpu().view(-1))
+    acc = accuracy(predicted_classes.view(-1), true_classes.view(-1))
     
     return loss,acc.item()
 

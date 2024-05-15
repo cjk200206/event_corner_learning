@@ -103,7 +103,7 @@ def compute_descriptor_Nearest_neighbour_mAP(desc_raw,desc_transformed_raw,flatt
     #提取HA后的点的位置
     warped_semi = inv_warp_image(inv_flattened_semi_transfromed.cpu(),homography.cpu())
     warped_semi = heatmap_nms(warped_semi.cpu(),conf_thresh=0.020)
-    gt_1_ha = torch.nonzero(torch.from_numpy(warped_semi))
+    gt_1_ha = torch.nonzero(warped_semi)
     
     
     desc = sample_desc_from_points(desc_raw.unsqueeze(0),pred_1.T.numpy())
