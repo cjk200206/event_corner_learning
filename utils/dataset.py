@@ -868,7 +868,7 @@ class DSEC(Dataset):
             self.event_files += new_event_files
             self.img_files += new_img_files
 
-            if self.mode == "preprocessed_files":
+            if self.mode == "preprocessed_files" or "preprocessed_files_server":
                 new_labels = [join(root,"labels",img_name, f) for f in listdir(join(root,"labels",img_name))]
                 self.labels += new_labels
                 
@@ -891,6 +891,40 @@ class DSEC(Dataset):
             # assert len(new_img_files)-2 == len(new_sae), "saes and imgs must be the same length" # except first and last img
             # assert len(new_labels) == len(new_sae), "saes and labels must be the same length"
 
+        # mode for server, load data to memory
+        if self.mode == "preprocessed_files_server":
+            self.img = []
+            self.label = []
+            self.sae = []
+            self.vox = []
+            for idx in tqdm.tqdm(range(self.__len__())):
+                img_file = self.img_files[idx+1]
+                img = cv2.imread(img_file)
+                img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
+
+                sae_file = self.sae_files[idx]
+                data = np.load(sae_file)
+                sae = data['sae']
+                vox = data['vox']
+
+                label = 0
+                
+                label_file = self.labels[idx]
+                label = cv2.imread(label_file) 
+                label = cv2.cvtColor(label,cv2.COLOR_RGB2GRAY)
+                
+                # 计算缩放因子
+                zoom_factors = (480 / 1080, 640 / 1440)
+
+                # 缩放图像
+                label = zoom(label, zoom_factors)
+                label = label/255
+
+                self.img.append(img)
+                self.label.append(label)
+                self.sae.append(sae)
+                self.vox.append(vox)
+
 
     def __len__(self):
         return len(self.sae_files) # except first and last img
@@ -901,31 +935,38 @@ class DSEC(Dataset):
         :param idx:
         :return: x,y,t,p,  label
         """
+        if self.mode != "preprocessed_files_server":
+            img_file = self.img_files[idx+1]
+            img = cv2.imread(img_file)
+            img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
 
-        img_file = self.img_files[idx+1]
-        img = cv2.imread(img_file)
-        img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
+            sae_file = self.sae_files[idx]
+            data = np.load(sae_file)
+            sae = data['sae']
+            vox = data['vox']
+            sae_img = ((sae+1)*127.5).astype(np.int8)
+            vox_img = vox*255
 
-        sae_file = self.sae_files[idx]
-        data = np.load(sae_file)
-        sae = data['sae']
-        vox = data['vox']
-        sae_img = ((sae+1)*127.5).astype(np.int8)
-        vox_img = vox*255
+            label = 0
+            if self.mode == "preprocessed_files":
+                label_file = self.labels[idx]
+                label = cv2.imread(label_file) 
+                label = cv2.cvtColor(label,cv2.COLOR_RGB2GRAY)
+                
+                # 计算缩放因子
+                zoom_factors = (480 / 1080, 640 / 1440)
 
-        label = 0
-        if self.mode == "preprocessed_files":
-            label_file = self.labels[idx]
-            label = cv2.imread(label_file) 
-            label = cv2.cvtColor(label,cv2.COLOR_RGB2GRAY)
-            
-            # 计算缩放因子
-            zoom_factors = (480 / 1080, 640 / 1440)
-
-            # 缩放图像
-            label = zoom(label, zoom_factors)
-            label = label/255
-
+                # 缩放图像
+                label = zoom(label, zoom_factors)
+                label = label/255
+        else:
+            img = self.img[idx]
+            sae = self.sae[idx]
+            vox = self.vox[idx]
+            label = self.label[idx]
+            img_file = self.img_files[idx+1]
+            sae_img = ((sae+1)*127.5).astype(np.int8)
+            vox_img = vox*255
 
         return img,sae,sae_img,vox,vox_img,label,img_file
 

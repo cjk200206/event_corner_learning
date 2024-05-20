@@ -100,9 +100,15 @@ if __name__ == '__main__':
     # model, and put to device
     model = EventCornerSuperpoint(crop_dimension=(224, 224),)
     # resume from ckpt
+    # if flags.pretrained != None:
+    #     ckpt = torch.load(flags.pretrained)
+    #     model.load_state_dict(ckpt["state_dict"],strict=False)
+    # model = model.to(flags.device)
+
+    # just for superpoint_v1
     if flags.pretrained != None:
         ckpt = torch.load(flags.pretrained)
-        model.load_state_dict(ckpt["state_dict"],strict=False)
+        model.backbone.load_state_dict(ckpt,strict=False)
     model = model.to(flags.device)
 
     # optimizer and lr scheduler
@@ -244,22 +250,24 @@ if __name__ == '__main__':
                 # label_3d = label_3d.to(flags.device).squeeze(1)
                 # label_3d_transform = label_3d_transform.to(flags.device).squeeze(1)
 
-            for label_vox,sae_50 in tqdm.tqdm(validation_loader): 
+            for img,sae,_,vox,_,label,img_file in tqdm.tqdm(validation_loader): 
                 ######### 以下是正常的HA变换
                 # 把数据转到gpu
-
-
-                label_vox = label_vox.to(flags.device)
-                sae = sae_50.to(flags.device)
+                label_vox = label.to(flags.device).unsqueeze(1).to(torch.float32)
+                sae = sae.to(flags.device).unsqueeze(1).to(torch.float32)
+                vox = vox.to(flags.device).to(torch.float32)
                 label_vox = crop_and_resize_to_resolution(label_vox)
                 sae = crop_and_resize_to_resolution(sae)
-
+                vox = crop_and_resize_to_resolution(vox)
                 # 选择通道
                 label_2d = label_vox[:,0,:,:]
                 for i in range(label_2d.shape[0]):
                     # label_2d[i] = torch.from_numpy(heatmap_nms_new(label_2d[i].cpu())) #给标签使用nms，筛除噪点
                     label_2d[i] = heatmap_nms_new(label_2d[i]) #给标签使用nms，筛除噪点
-                input_vox = sae[:,0,:,:]
+                if flags.representation == "sae":
+                    input_vox = sae[:,0,:,:]
+                elif flags.representation == "voxel":
+                    input_vox = vox[:,0,:,:]
 
                 #做HA变换
                 homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -287,8 +295,8 @@ if __name__ == '__main__':
 
 
                 with torch.no_grad():
-                    semi, desc = model(input_vox)
-                    semi_transform, desc_transform = model(input_vox_transformed)
+                    semi, desc = model(input_vox.unsqueeze(1).cuda())
+                    semi_transform, desc_transform = model(input_vox_transformed.unsqueeze(1).cuda())
 
                     try:
                         # Check for NaN semi_transform
@@ -470,19 +478,24 @@ if __name__ == '__main__':
             #     input_vox_transformed = input_vox_transformed.to(flags.device).squeeze(1)
             #     label_3d = label_3d.to(flags.device).squeeze(1)
             #     label_3d_transform = label_3d_transform.to(flags.device).squeeze(1)
-            for label_vox,sae_50 in tqdm.tqdm(training_loader): 
+            for img,sae,_,vox,_,label,img_file in tqdm.tqdm(training_loader): 
                 ######### 以下是正常的HA变换
                 # 把数据转到gpu
-                label_vox = label_vox.to(flags.device)
-                sae = sae_50.to(flags.device)
+                label_vox = label.to(flags.device).unsqueeze(1).to(torch.float32)
+                sae = sae.to(flags.device).unsqueeze(1).to(torch.float32)
+                vox = vox.to(flags.device).to(torch.float32)
                 label_vox = crop_and_resize_to_resolution(label_vox)
                 sae = crop_and_resize_to_resolution(sae)
+                vox = crop_and_resize_to_resolution(vox)
                 # 选择通道
                 label_2d = label_vox[:,0,:,:]
                 for i in range(label_2d.shape[0]):
                     # label_2d[i] = torch.from_numpy(heatmap_nms_new(label_2d[i].cpu())) #给标签使用nms，筛除噪点
                     label_2d[i] = heatmap_nms_new(label_2d[i]) #给标签使用nms，筛除噪点
-                input_vox = sae[:,0,:,:]
+                if flags.representation == "sae":
+                    input_vox = sae[:,0,:,:]
+                elif flags.representation == "voxel":
+                    input_vox = vox[:,0,:,:]
                 
                 #做HA变换
                 homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -501,7 +514,7 @@ if __name__ == '__main__':
                 #保证标签为1
                 for i in range(label_2d_transformed.shape[0]):
                     # label_2d_transformed[i] = torch.from_numpy(heatmap_nms_new(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
-                    label_2d[i] = heatmap_nms_new(label_2d[i]) #给标签使用nms，筛除噪点
+                    label_2d_transformed[i] = heatmap_nms_new(label_2d_transformed[i]) #给标签使用nms，筛除噪点
 
                 #转换标签
                 label_3d = getLabels(label_2d.unsqueeze(1),8,device=flags.device)
