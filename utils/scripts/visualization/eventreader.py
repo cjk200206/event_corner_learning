@@ -11,8 +11,7 @@ from ..utils.eventslicer import EventSlicer
 class EventReaderAbstract:
     def __init__(self, filepath: Path):
         assert filepath.is_file()
-        # assert filepath.name.endswith('.h5')
-        assert filepath.name.endswith('.hdf5')
+        assert filepath.name.endswith('.hdf5') or filepath.name.endswith('.h5')
         self.h5f = h5py.File(str(filepath), 'r')
         self._finalizer = weakref.finalize(self, self.close_callback, self.h5f)
 

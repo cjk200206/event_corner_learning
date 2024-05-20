@@ -12,7 +12,7 @@ from math import pi
 sys.path.append("../")
 
 from numpy.linalg import inv
-from utils.dataset import Syn_Superpoint_SAE
+from utils.dataset import DSEC
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
@@ -48,7 +48,7 @@ def FLAGS():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--pin_memory", type=bool, default=True)
     parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--output_path", default="/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint_sae")
+    parser.add_argument("--output_path", default="/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint_sae_DSEC")
 
 
     flags = parser.parse_args()
@@ -72,7 +72,7 @@ if __name__ == '__main__':
 
     flags = FLAGS()
     # datasets, add augmentation to training set
-    test_dataset = Syn_Superpoint_SAE(flags.test_dataset,num_time_bins=1,grid_size=(260,346),mode="raw_files",test=True)
+    test_dataset = DSEC(flags.test_dataset,mode="preprocessed_files")
     # construct loader, handles data streaming to gpu
     test_loader = DataLoader(test_dataset,batch_size=flags.batch_size,
                                pin_memory=flags.pin_memory,collate_fn=default_collate)
@@ -127,14 +127,14 @@ if __name__ == '__main__':
         "max_angle": pi/12
     }
         
-    for event_vox, label_vox, heatmap, sae_50, sae_75, sae_100,event_file in tqdm.tqdm(test_loader):
+    for img,sae,sae_img,label,img_file in tqdm.tqdm(test_loader):
         
         #把数据转到gpu
-        label_vox = label_vox.to(flags.device)
-        sae = sae_100.to(flags.device)
+        label_vox = label.to(flags.device).unsqueeze(1).to(torch.float32)
+        sae = sae.to(flags.device).unsqueeze(1).to(torch.float32)
         #取出单通道的vox
         label_vox = crop_and_resize_to_resolution(label_vox,(224,224))
-        sae = crop_and_resize_to_resolution(sae.unsqueeze(1),(224,224))
+        sae = crop_and_resize_to_resolution(sae,(224,224))
         label_2d = label_vox[:,0,:,:]
         input_vox = sae[:,0,:,:]
         for i in range(label_2d.shape[0]):
@@ -161,9 +161,9 @@ if __name__ == '__main__':
                                            homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
         label_2d_transformed = warped_imgs[:label_2d.size(0),0]
         input_vox_transformed = warped_imgs[label_2d.size(0):,0]
-        #增加椒盐噪声
-        input_vox = add_salt_and_pepper_new(input_vox,type="sae")
-        input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
+        # #增加椒盐噪声
+        # input_vox = add_salt_and_pepper_new(input_vox,type="sae")
+        # input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
         #保证标签为1
         for i in range(label_2d_transformed.shape[0]):
             # label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点

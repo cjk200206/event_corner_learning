@@ -170,8 +170,8 @@ if __name__ == '__main__':
             input_vox_transformed = torch.where(input_vox_transformed.cuda() < 0.9, torch.tensor(0.0).cuda(), input_vox_transformed.cuda()) #小于0的地方全转到0
 
             #转换标签
-            label_3d = getLabels(label_2d.unsqueeze(1),8)
-            label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8)
+            label_3d = getLabels(label_2d.unsqueeze(1),8).cuda()
+            label_3d_transform = getLabels(label_2d_transformed.unsqueeze(1),8).cuda()
 
             with torch.no_grad():
                 semi, desc = model(input_vox.unsqueeze(1).cuda())

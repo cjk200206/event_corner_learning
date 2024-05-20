@@ -94,18 +94,16 @@ def nn_match_two_way(desc1, desc2, nn_thresh):
     matches[2, :] = scores
     return matches
 
-def compute_descriptor_Nearest_neighbour_mAP(desc_raw,desc_transformed_raw,flattened_semi, inv_flattened_semi_transfromed, homography,inv_homography,threshold = 6):
+def compute_descriptor_Nearest_neighbour_mAP(desc_raw,desc_transformed_raw,flattened_semi, inv_flattened_semi_transfromed,flattened_semi_transfromed, homography,inv_homography,threshold = 6):
     matches_1,pred_1,gt_1,dist_1 = compute_detection_correctness(flattened_semi,inv_flattened_semi_transfromed,threshold)
     # matches_2,pred_2,gt_2,dist_2 = compute_detection_correctness(inv_flattened_semi_transfromed,flattened_semi,threshold)
     H = 224
     W = 224
 
     #提取HA后的点的位置
-    warped_semi = inv_warp_image(inv_flattened_semi_transfromed.cpu(),homography.cpu())
-    warped_semi = heatmap_nms(warped_semi.cpu(),conf_thresh=0.020)
-    gt_1_ha = torch.nonzero(warped_semi)
+    gt_1_ha = torch.nonzero(flattened_semi_transfromed)
     
-    
+    #提取desc点对
     desc = sample_desc_from_points(desc_raw.unsqueeze(0),pred_1.T.numpy())
     desc_ha = sample_desc_from_points(desc_transformed_raw.unsqueeze(0),gt_1_ha.T.numpy())
 
@@ -114,6 +112,8 @@ def compute_descriptor_Nearest_neighbour_mAP(desc_raw,desc_transformed_raw,flatt
 
     matches_desc = nn_match_two_way(desc/norm1,desc_ha/norm2,0.7)
 
+    desc_matched_point_1 = pred_1[matches_desc[0]]
+    desc_matched_point_2 = gt_1_ha[matches_desc[1]]
     desc_match_number = matches_desc.shape[0]
     detector_match_number = len(matches_1)
 
@@ -134,4 +134,4 @@ def compute_descriptor_Nearest_neighbour_mAP(desc_raw,desc_transformed_raw,flatt
     
     # desc_inv = sample_desc_from_points(desc_transformed_raw.unsqueeze(0),inv_gt_1.T)
 
-    return desc_match_number,detector_match_number
+    return desc_match_number,detector_match_number,desc_matched_point_1,desc_matched_point_2,pred_1,gt_1_ha,matches_desc

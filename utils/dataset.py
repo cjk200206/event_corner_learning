@@ -3,9 +3,13 @@ from os import listdir
 from os.path import join
 import os
 import torch 
+from pathlib import Path
+import tqdm
 from torch.utils.data import Dataset
-from utils.utils.utils import add_salt_and_pepper_new,get_timesurface,getLabels,inv_warp_image,inv_warp_image_batch,heatmap_nms
+from utils.utils.utils import add_salt_and_pepper_new,get_timesurface,get_timesurface_from_events,getLabels,inv_warp_image,inv_warp_image_batch,heatmap_nms
 from utils.utils.homographies import sample_homography_np
+from utils.scripts.visualization.eventreader import EventReader
+from scipy.ndimage import zoom
 from numpy.linalg import inv
 from math import pi
 import torch.nn.functional as F
@@ -744,9 +748,6 @@ class Syn_Superpoint_SAE(Dataset):
         
         else:
             raise ValueError("use preprocessed_files or raw_files!")
-
-
-
         
 #临时修改成图片
 class Pic_Superpoint(Dataset):
@@ -821,6 +822,113 @@ class Pic_Superpoint(Dataset):
         heatmap = corner_to_heatmap(corner)
 
         return img, heatmap
+
+class DSEC(Dataset):
+    def __init__(self, root, mode="raw_files"):
+        """
+            /root
+                /events
+                    /zurich_city...
+                        /events.h5
+                        /rectify_map.h5
+                    /interlake_...
+                /images
+                    /zurich_city...
+                        /000000.png
+                        ...
+                    /interlake_...
+                /timestamps
+                    /interlake_xxx.txt  # timestamps for images
+                    ...
+        """
+        self.dirs = listdir(join(root,"events")) # different sequence names
+        # 原始的数据
+        self.img_files = []
+        self.event_files = []
+        self.timestamps_files = []
+        # 经过预处理的数据
+        self.labels = []
+        self.sae_files = []
+
+        self.mode = mode # raw_files or preprocessed_files
+        self.img_size = (1080,1440)
+        self.event_size = (480,640)
+
+        new_time_stamp_files = [join(root,"timestamps",f) for f in listdir(join(root,"timestamps"))]
+        self.timestamps_files += new_time_stamp_files
+
+        for iter, c in enumerate(self.dirs):
+            name = c.split('events')
+            name.insert(1,'images_rectified')
+            img_name = "".join(name)
+
+            new_event_files = [join(root,"events",c,"events.h5")]
+            new_img_files = [join(root,"images",img_name, f) for f in listdir(join(root,"images",img_name))]
+
+            self.event_files += new_event_files
+            self.img_files += new_img_files
+
+            if self.mode == "preprocessed_files":
+                new_labels = [join(root,"labels",img_name, f) for f in listdir(join(root,"labels",img_name))]
+                self.labels += new_labels
+                
+            
+            # 预处理原始事件到分割事件
+            if self.mode == "raw_files":
+                if os.path.exists(join(root,"saes")) == False:
+                    os.makedirs(join(root,"saes"))
+                if os.path.exists(join(root,"saes",c)) == False:
+                    os.makedirs(join(root,"saes",c))
+                    print("preprocess raw events to saes ...")
+                    for i,events in tqdm.tqdm(enumerate(EventReader(Path(new_event_files[0]), 50))):
+                        x,y,t,p = events['x'],events['y'],events['t'],events['p']
+                        sae = get_timesurface_from_events(x,y,t,p,self.event_size,scaling_factor=10e-3)
+                        vox = events_to_vox(np.array([x,y,t,p]).transpose(),1,self.event_size)
+                        np.savez_compressed(join(root,"saes",c,"{:06d}".format(i+1)),sae=sae,vox=vox) # except first and last img
+            
+            new_sae = [join(root,"saes",c, f) for f in listdir(join(root,"saes",c))]
+            self.sae_files += new_sae
+            # assert len(new_img_files)-2 == len(new_sae), "saes and imgs must be the same length" # except first and last img
+            # assert len(new_labels) == len(new_sae), "saes and labels must be the same length"
+
+
+    def __len__(self):
+        return len(self.sae_files) # except first and last img
+
+    def __getitem__(self, idx):
+        """
+        returns events and label, loading events from aedat
+        :param idx:
+        :return: x,y,t,p,  label
+        """
+
+        img_file = self.img_files[idx+1]
+        img = cv2.imread(img_file)
+        img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
+
+        sae_file = self.sae_files[idx]
+        data = np.load(sae_file)
+        sae = data['sae']
+        vox = data['vox']
+        sae_img = ((sae+1)*127.5).astype(np.int8)
+        vox_img = vox*255
+
+        label = 0
+        if self.mode == "preprocessed_files":
+            label_file = self.labels[idx]
+            label = cv2.imread(label_file) 
+            label = cv2.cvtColor(label,cv2.COLOR_RGB2GRAY)
+            
+            # 计算缩放因子
+            zoom_factors = (480 / 1080, 640 / 1440)
+
+            # 缩放图像
+            label = zoom(label, zoom_factors)
+            label = label/255
+
+
+        return img,sae,sae_img,vox,vox_img,label,img_file
+
 
 if __name__ =='__main__':
     dataset_root = "/remote-home/share/cjk/syn2e/datasets"

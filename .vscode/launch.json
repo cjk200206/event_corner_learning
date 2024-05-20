@@ -5,6 +5,61 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "test_event_superpoint_sae_DSEC测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "test_event_superpoint_sae_DSEC.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--test_dataset",
+                "../DSEC/val",
+                "--checkpoint",
+                "../log/superpoint_ckpt/superpoint_05201344_sae_DSEC_best.pth",
+                "--output_path",
+                "/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint_sae_DSEC",
+                "--device",
+                "cuda:0",
+                "--batch_size",
+                "1"
+            ],
+            "cwd": "scripts"
+        },
+        {
+            "name": "train_event_superpoint_sae_DSEC测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "train_event_superpoint_sae_DSEC.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--validation_dataset","../DSEC/val",
+                "--training_dataset","../DSEC/train",
+                "--log_dir","../log/event_superpoint_sae_DSEC",
+                "--device","cuda:0",
+                "--pretrained","../log/superpoint_ckpt/superpoint_05022138_best.pth",
+                "--batch_size","2",
+                "--mode","preprocessed_files",
+            ],
+            "cwd": "scripts"
+        },
+        {
+            "name": "preprocess_DSEC测试",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "preprocess_DSEC.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--dataset", "../DSEC/val",
+                "--output_path", "../DSEC/val",
+                "--checkpoint", "../log/superpoint_ckpt/superpoint_v1.pth",
+                "--device", "cuda:0",
+                "--mode", "raw_files"
+            ],
+            "cwd": "scripts"
+        },
+        {
             "name": "test_event_superpoint_sae测试",
             "type": "debugpy",
             "request": "launch",
@@ -15,7 +70,7 @@
                 "--test_dataset",
                 "/home/cjk2002/code/syn2e/datasets/test",
                 "--checkpoint",
-                "../log/superpoint_ckpt/superpoint_05112043_sae_best.pth",
+                "../log/superpoint_ckpt/superpoint_05171016_sae_best.pth",
                 "--output_path",
                 "/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint_sae",
                 "--device",

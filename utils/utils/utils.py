@@ -78,8 +78,8 @@ def getLabels(labels_2D, cell_size, device="cpu"):
     labels3D_in_loss = labels3D_flattened
     return labels3D_in_loss
 
-#做nms old
-def getPtsFromHeatmap_old(heatmap, conf_thresh, nms_dist):
+#做nms numpy
+def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
     '''
     :param self:
     :param heatmap:
@@ -98,7 +98,7 @@ def getPtsFromHeatmap_old(heatmap, conf_thresh, nms_dist):
     pts[0, :] = ys
     pts[1, :] = xs
     pts[2, :] = heatmap[xs, ys]
-    pts, _ = nms_fast_old(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
+    pts, _ = nms_fast(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
     inds = np.argsort(pts[2, :])
     pts = pts[:, inds[::-1]]  # Sort by confidence.
     # Remove points along border.
@@ -109,7 +109,7 @@ def getPtsFromHeatmap_old(heatmap, conf_thresh, nms_dist):
     pts = pts[:, ~toremove]
     return pts
 
-def nms_fast_old(in_corners, H, W, dist_thresh):
+def nms_fast(in_corners, H, W, dist_thresh):
     """
     Run a faster approximate Non-Max-Suppression on numpy corners shaped:
       3xN [x_i,y_i,conf_i]^T
@@ -170,7 +170,7 @@ def nms_fast_old(in_corners, H, W, dist_thresh):
     out_inds = inds1[inds_keep[inds2]]
     return out, out_inds
 
-def heatmap_nms_old(heatmap, nms_dist=8, conf_thresh=0.020):
+def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
     """
     input:
         heatmap: np [(1), H, W]
@@ -179,14 +179,15 @@ def heatmap_nms_old(heatmap, nms_dist=8, conf_thresh=0.020):
     # conf_thresh = self.config['model']['detection_threshold']
     heatmap = heatmap.squeeze()
     # print("heatmap: ", heatmap.shape)
-    pts_nms = getPtsFromHeatmap_old(heatmap, conf_thresh, nms_dist)
+    pts_nms = getPtsFromHeatmap(heatmap, conf_thresh, nms_dist)
     semi_thd_nms_sample = np.zeros_like(heatmap)
     semi_thd_nms_sample[
         pts_nms[1, :].astype(np.int), pts_nms[0, :].astype(np.int)
     ] = 1
     return semi_thd_nms_sample
 
-def nms_fast(in_corners, H, W, dist_thresh):
+#做nms torch
+def nms_fast_new(in_corners, H, W, dist_thresh):
     """
     Run a faster approximate Non-Max-Suppression on tensor corners shaped:
       3xN [x_i,y_i,conf_i]^T
@@ -255,8 +256,7 @@ def nms_fast(in_corners, H, W, dist_thresh):
 
     return out, out_inds
 
-
-def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
+def getPtsFromHeatmap_new(heatmap, conf_thresh, nms_dist):
     """
     :param heatmap: torch tensor (H, W)
     :return:
@@ -274,7 +274,7 @@ def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
     pts[0, :] = ys
     pts[1, :] = xs
     pts[2, :] = heatmap[xs, ys]
-    pts, _ = nms_fast(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
+    pts, _ = nms_fast_new(pts, H, W, dist_thresh=nms_dist)  # Apply NMS.
     inds = torch.argsort(pts[2, :])
     pts = pts[:, inds.flip(0)]  # Sort by confidence.
     # Remove points along border.
@@ -285,8 +285,7 @@ def getPtsFromHeatmap(heatmap, conf_thresh, nms_dist):
     pts = pts[:, ~toremove]
     return pts
 
-
-def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
+def heatmap_nms_new(heatmap, nms_dist=8, conf_thresh=0.020):
     """
     input:
         heatmap: torch tensor [(1), H, W]
@@ -295,14 +294,12 @@ def heatmap_nms(heatmap, nms_dist=8, conf_thresh=0.020):
     # conf_thresh = self.config['model']['detection_threshold']
     heatmap = heatmap.squeeze()
     # print("heatmap: ", heatmap.shape)
-    pts_nms = getPtsFromHeatmap(heatmap, conf_thresh, nms_dist).to(torch.long)
+    pts_nms = getPtsFromHeatmap_new(heatmap, conf_thresh, nms_dist).to(torch.long)
     semi_thd_nms_sample = torch.zeros_like(heatmap)
     semi_thd_nms_sample[
         pts_nms[1, :], pts_nms[0, :]
     ] = 1
     return semi_thd_nms_sample
-
-
 
 #数据增强,添加椒盐噪声
 def add_salt_and_pepper_new(vox,type="default"):
@@ -441,11 +438,11 @@ def get_timesurface(filename,img_size = (260,346),tau = 50e-3):
 
     return sae
 
-def get_timesurface_from_events(x:np.ndarray,y:np.ndarray,ts:np.ndarray,p:np.ndarray,img_size = (260,346),tau = 50e-3):
+def get_timesurface_from_events(x:np.ndarray,y:np.ndarray,ts:np.ndarray,p:np.ndarray,img_size = (260,346),tau = 50e-3,scaling_factor=10e-6):
     
     x = x.tolist()
     y = y.tolist()
-    ts = (ts*10e-6).tolist()
+    ts = (ts*scaling_factor).tolist()
     p = p.tolist()
     
     img_size = img_size
@@ -496,3 +493,5 @@ def warp_keypoints(keypoints, H):
                                         axis=1)
     warped_points = np.dot(homogeneous_points, np.transpose(H))
     return warped_points[:, :2] / warped_points[:, 2:]
+
+

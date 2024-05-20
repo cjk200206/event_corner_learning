@@ -11,7 +11,7 @@ from math import pi
 sys.path.append("../")
 
 from numpy.linalg import inv
-from utils.dataset import Syn_Superpoint_SAE
+from utils.dataset import Syn_Superpoint_SAE, DSEC
 from torch.utils.data import DataLoader
 from torch.utils.data import default_collate
 from utils.models_superpoint import EventCornerSuperpoint
@@ -47,6 +47,7 @@ def FLAGS():
     parser.add_argument("--training_dataset", default="/remote-home/share/cjk/syn2e/datasets/train")
     # parser.add_argument("--test_dataset", default="/remote-home/share/cjk/syn2e/datasets/test")
     parser.add_argument("--mode", default="raw_files")
+    parser.add_argument("--representation", default="voxel")
 
     # logging options
     parser.add_argument("--log_dir", default="log/superpoint_sae")
@@ -86,9 +87,9 @@ if __name__ == '__main__':
     flags = FLAGS()
     # datasets, add augmentation to training set
     print("initialize training")
-    training_dataset = Syn_Superpoint_SAE(flags.training_dataset,num_time_bins=1,grid_size=(260,346),mode=flags.mode)
+    training_dataset = DSEC(flags.training_dataset,mode=flags.mode)
     print("initialize validation")
-    validation_dataset = Syn_Superpoint_SAE(flags.validation_dataset,num_time_bins=1,grid_size=(260,346),mode=flags.mode)
+    validation_dataset = DSEC(flags.validation_dataset,mode=flags.mode)
 
     # construct loader, handles data streaming to gpu
     training_loader = DataLoader(training_dataset,batch_size=flags.batch_size,
@@ -137,7 +138,7 @@ if __name__ == '__main__':
         
         if flags.mode != "preprocessed_files_server": 
             # for _,label_vox,_,sae,_,label_vox_first,_,sae_first in tqdm.tqdm(validation_loader):
-            for event_vox, label_vox, heatmap, sae_50, sae_75, sae_100 in tqdm.tqdm(validation_loader): 
+            for img,sae,sae_img,vox,vox_img,label,img_file in tqdm.tqdm(validation_loader): 
                 
                 ########## 以下是不用HA变化
                 # #sae_50+sae_100            
@@ -165,16 +166,21 @@ if __name__ == '__main__':
 
                 ######### 以下是正常的HA变换
                 # 把数据转到gpu
-                label_vox = label_vox.to(flags.device)
-                sae = sae_50.to(flags.device)
+                label_vox = label.to(flags.device).unsqueeze(1).to(torch.float32)
+                sae = sae.to(flags.device).unsqueeze(1).to(torch.float32)
+                vox = vox.to(flags.device).to(torch.float32)
                 label_vox = crop_and_resize_to_resolution(label_vox)
                 sae = crop_and_resize_to_resolution(sae)
+                vox = crop_and_resize_to_resolution(vox)
                 # 选择通道
                 label_2d = label_vox[:,0,:,:]
                 for i in range(label_2d.shape[0]):
                     # label_2d[i] = torch.from_numpy(heatmap_nms_new(label_2d[i].cpu())) #给标签使用nms，筛除噪点
                     label_2d[i] = heatmap_nms_new(label_2d[i]) #给标签使用nms，筛除噪点
-                input_vox = sae[:,0,:,:]
+                if flags.representation == "sae":
+                    input_vox = sae[:,0,:,:]
+                elif flags.representation == "voxel":
+                    input_vox = vox[:,0,:,:]
                 
                 #做HA变换
                 homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -188,9 +194,9 @@ if __name__ == '__main__':
                                                 homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
                 label_2d_transformed = warped_imgs[:label_2d.size(0),0]
                 input_vox_transformed = warped_imgs[label_2d.size(0):,0]
-                #增加椒盐噪声
-                input_vox = add_salt_and_pepper_new(input_vox,type="sae")
-                input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
+                # #增加椒盐噪声
+                # input_vox = add_salt_and_pepper_new(input_vox,type="sae")
+                # input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
                 #保证标签为1
                 for i in range(label_2d_transformed.shape[0]):
                     label_2d_transformed[i] = heatmap_nms_new(label_2d_transformed[i].cpu()) #给标签使用nms，筛除噪点
@@ -267,9 +273,9 @@ if __name__ == '__main__':
 
                 label_2d_transformed = warped_imgs[:label_2d.size(0),0]
                 input_vox_transformed = warped_imgs[label_2d.size(0):,0]
-                #增加椒盐噪声
-                input_vox = add_salt_and_pepper_new(input_vox,type="sae").unsqueeze(1).cuda()
-                input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae").unsqueeze(1).cuda()
+                # #增加椒盐噪声
+                # input_vox = add_salt_and_pepper_new(input_vox,type="sae").unsqueeze(1).cuda()
+                # input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae").unsqueeze(1).cuda()
                 #保证标签为1
                 for i in range(label_2d_transformed.shape[0]):
                     # label_2d_transformed[i] = torch.from_numpy(heatmap_nms_new(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
@@ -354,7 +360,7 @@ if __name__ == '__main__':
         
         if flags.mode != "preprocessed_files_server":
 
-            for event_vox, label_vox, heatmap, sae_50, sae_75, sae_100 in tqdm.tqdm(training_loader):
+            for img,sae,sae_img,vox,vox_img,label,img_file in tqdm.tqdm(training_loader):
 
                 ########## 以下是不用HA变化
                 #sae_50+sae_100            
@@ -382,15 +388,20 @@ if __name__ == '__main__':
 
                 ########## 以下是正常的HA变换
                 # 把数据转到gpu
-                label_vox = label_vox.to(flags.device)
-                sae = sae_50.to(flags.device)
+                label_vox = label.to(flags.device).unsqueeze(1).to(torch.float32)
+                sae = sae.to(flags.device).unsqueeze(1).to(torch.float32)
+                vox = vox.to(flags.device).to(torch.float32)
                 label_vox = crop_and_resize_to_resolution(label_vox)
                 sae = crop_and_resize_to_resolution(sae)
+                vox = crop_and_resize_to_resolution(vox)
                 #随机选一个
                 label_2d = label_vox[:,0,:,:]
                 for i in range(label_2d.shape[0]):
                     label_2d[i] = heatmap_nms_new(label_2d[i]) #给标签使用nms，筛除噪点
-                input_vox = sae[:,0,:,:]
+                if flags.representation == "sae":
+                    input_vox = sae[:,0,:,:]
+                elif flags.representation == "voxel":
+                    input_vox = vox[:,0,:,:]
 
                 #做HA变换
                 homography = sample_homography_np(np.array([2, 2]),**HA_params)
@@ -403,9 +414,9 @@ if __name__ == '__main__':
                                                 homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
                 label_2d_transformed = warped_imgs[:label_2d.size(0),0]
                 input_vox_transformed = warped_imgs[label_2d.size(0):,0]
-                #增加椒盐噪声
-                input_vox = add_salt_and_pepper_new(input_vox,type="sae").unsqueeze(1).cuda()
-                input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae").unsqueeze(1).cuda()
+                # #增加椒盐噪声
+                # input_vox = add_salt_and_pepper_new(input_vox,type="sae").unsqueeze(1).cuda()
+                # input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae").unsqueeze(1).cuda()
                 #保证标签为1
                 for i in range(label_2d_transformed.shape[0]):
                     label_2d_transformed[i] = heatmap_nms_new(label_2d_transformed[i]) #给标签使用nms，筛除噪点
@@ -420,8 +431,8 @@ if __name__ == '__main__':
 
                 optimizer.zero_grad()
 
-                semi, desc = model(input_vox)
-                semi_transform, desc_transform = model(input_vox_transformed)
+                semi, desc = model(input_vox.unsqueeze(1).cuda())
+                semi_transform, desc_transform = model(input_vox_transformed.unsqueeze(1).cuda())
 
                 try:
                     # Check for NaN semi_transform
@@ -484,9 +495,9 @@ if __name__ == '__main__':
                                                 homography.unsqueeze(0).expand(label_2d.size(0)*2,-1,-1),device=input_vox.device)
                 label_2d_transformed = warped_imgs[:label_2d.size(0),0]
                 input_vox_transformed = warped_imgs[label_2d.size(0):,0]
-                #增加椒盐噪声
-                input_vox = add_salt_and_pepper_new(input_vox,type="sae")
-                input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
+                # #增加椒盐噪声
+                # input_vox = add_salt_and_pepper_new(input_vox,type="sae")
+                # input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
                 #保证标签为1
                 for i in range(label_2d_transformed.shape[0]):
                     # label_2d_transformed[i] = torch.from_numpy(heatmap_nms_new(label_2d_transformed[i].cpu())) #给标签使用nms，筛除噪点
