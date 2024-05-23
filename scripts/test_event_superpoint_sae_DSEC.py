@@ -49,7 +49,7 @@ def FLAGS():
     parser.add_argument("--pin_memory", type=bool, default=True)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--output_path", default="/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint_sae_DSEC")
-
+    parser.add_argument("--representation", default="voxel")
 
     flags = parser.parse_args()
 
@@ -127,19 +127,23 @@ if __name__ == '__main__':
         "max_angle": pi/12
     }
         
-    for img,sae,sae_img,label,img_file in tqdm.tqdm(test_loader):
-        
-        #把数据转到gpu
+    for img,sae,_,vox,_,label,img_file in tqdm.tqdm(test_loader):
+        # 把数据转到gpu
         label_vox = label.to(flags.device).unsqueeze(1).to(torch.float32)
         sae = sae.to(flags.device).unsqueeze(1).to(torch.float32)
-        #取出单通道的vox
-        label_vox = crop_and_resize_to_resolution(label_vox,(224,224))
-        sae = crop_and_resize_to_resolution(sae,(224,224))
+        vox = vox.to(flags.device).to(torch.float32)
+        label_vox = crop_and_resize_to_resolution(label_vox)
+        sae = crop_and_resize_to_resolution(sae)
+        vox = crop_and_resize_to_resolution(vox)
+        # 选择通道
         label_2d = label_vox[:,0,:,:]
-        input_vox = sae[:,0,:,:]
         for i in range(label_2d.shape[0]):
-            # label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
+            # label_2d[i] = torch.from_numpy(heatmap_nms_new(label_2d[i].cpu())) #给标签使用nms，筛除噪点
             label_2d[i] = heatmap_nms_new(label_2d[i]) #给标签使用nms，筛除噪点
+        if flags.representation == "sae":
+            input_vox = sae[:,0,:,:]
+        elif flags.representation == "voxel":
+            input_vox = vox[:,0,:,:]
 
         # #取出比对组
         # label_vox_first = label_vox_first.to(flags.device)
