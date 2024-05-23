@@ -34,13 +34,14 @@
             "justMyCode": true,
             "args": [
                 "--validation_dataset","../DSEC/val",
-                // "--training_dataset","../DSEC/train",
-                "--training_dataset","../DSEC/val",
+                "--training_dataset","../DSEC/train",
+                // "--training_dataset","../DSEC/val",
                 "--log_dir","../log/event_superpoint_sae_DSEC",
                 "--device","cuda:0",
                 "--pretrained","../log/superpoint_ckpt/superpoint_05022138_best.pth",
                 "--batch_size","2",
                 "--mode","preprocessed_files",
+                "--representation","voxel"
             ],
             "cwd": "scripts"
         },

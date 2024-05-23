@@ -195,8 +195,8 @@ class EventCornerSuperpoint(nn.Module):
                  activation=nn.LeakyReLU(negative_slope=0.1)
                  ):
         nn.Module.__init__(self)
-        self.backbone = SuperPointNet()
-        # self.backbone = SuperPointNet_RAW()
+        # self.backbone = SuperPointNet()
+        self.backbone = SuperPointNet_RAW()
         self.crop_dimension = crop_dimension
     
     def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
