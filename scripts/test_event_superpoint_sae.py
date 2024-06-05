@@ -10,6 +10,8 @@ import torch.nn.functional as F
 import cv2
 from math import pi
 sys.path.append("../")
+import matplotlib.pyplot as plt
+
 
 from numpy.linalg import inv
 from utils.dataset import Syn_Superpoint_SAE
@@ -49,6 +51,7 @@ def FLAGS():
     parser.add_argument("--pin_memory", type=bool, default=True)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--output_path", default="/home/cjk2002/code/event_code/event_corner_learning/log/event_superpoint_sae")
+    parser.add_argument("--representation", default="sae")
 
 
     flags = parser.parse_args()
@@ -91,7 +94,7 @@ if __name__ == '__main__':
     sum_loss_d = 0
     img_num = 0
 
-    threshold_list = [3,6,9]
+    threshold_list = [2,3,4,5,6,7,8,9]
     match_numbers = [0]*len(threshold_list)
     pred_numbers = [0]*len(threshold_list)
     gt_numbers = [0]*len(threshold_list)
@@ -100,6 +103,11 @@ if __name__ == '__main__':
     rep_gt_numbers = [0]*len(threshold_list)
     desc_num = [0]*len(threshold_list)
     total_match_num = [0]*len(threshold_list)
+    recalls = []
+    precisions = []
+    LEs = []
+    NNmAPs = []
+    Repeatabilities = []
 
     #建文件夹
     os.makedirs(flags.output_path + "/heatmap",exist_ok=True)
@@ -130,13 +138,18 @@ if __name__ == '__main__':
     for event_vox, label_vox, heatmap, sae_50, sae_75, sae_100,event_file in tqdm.tqdm(test_loader):
         
         #把数据转到gpu
+        event_vox = event_vox.to(flags.device)
         label_vox = label_vox.to(flags.device)
         sae = sae_100.to(flags.device)
         #取出单通道的vox
         label_vox = crop_and_resize_to_resolution(label_vox,(224,224))
         sae = crop_and_resize_to_resolution(sae.unsqueeze(1),(224,224))
+        event_vox = crop_and_resize_to_resolution(event_vox,(224,224))
         label_2d = label_vox[:,0,:,:]
-        input_vox = sae[:,0,:,:]
+        if flags.representation == "sae":
+            input_vox = sae[:,0,:,:]
+        elif flags.representation == "voxel":
+            input_vox = event_vox[:,0,:,:]
         for i in range(label_2d.shape[0]):
             # label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
             label_2d[i] = heatmap_nms_new(label_2d[i]) #给标签使用nms，筛除噪点
@@ -162,8 +175,12 @@ if __name__ == '__main__':
         label_2d_transformed = warped_imgs[:label_2d.size(0),0]
         input_vox_transformed = warped_imgs[label_2d.size(0):,0]
         #增加椒盐噪声
-        input_vox = add_salt_and_pepper_new(input_vox,type="sae")
-        input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
+        if flags.representation == "sae":
+            input_vox = add_salt_and_pepper_new(input_vox,type="sae")
+            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed,type="sae")
+        else:
+            input_vox = add_salt_and_pepper_new(input_vox)
+            input_vox_transformed = add_salt_and_pepper_new(input_vox_transformed)
         #保证标签为1
         for i in range(label_2d_transformed.shape[0]):
             # label_2d[i] = torch.from_numpy(heatmap_nms(label_2d[i].cpu())) #给标签使用nms，筛除噪点
@@ -240,7 +257,10 @@ if __name__ == '__main__':
                 matches,pred,gt,dist = compute_detection_correctness(nms_semi,label_heatmap,threshold)
                 rep_matches,rep_gt = compute_detection_repeatability(nms_semi,inv_warped_semi,threshold)
                 num_1,num_2,matched_points_1,matched_points_2,points_1,points_2,desc_matches = compute_descriptor_Nearest_neighbour_mAP(desc_1,desc_2,nms_semi,inv_warped_semi,nms_semi_transformed,homography,inv_homography,threshold)
-                matched_img = draw_matches((input_img.cpu().numpy()+1)*127.5,matched_points_1,(input_img_transformed.cpu().numpy()+1)*127.5,matched_points_2,points_1,points_2)
+                if flags.representation == "sae":
+                    matched_img = draw_matches((input_img.cpu().numpy()+1)*127.5,matched_points_1,(input_img_transformed.cpu().numpy()+1)*127.5,matched_points_2,points_1,points_2)
+                else:
+                    matched_img = draw_matches(input_img.cpu().numpy()*255,matched_points_1,input_img_transformed.cpu().numpy()*255,matched_points_2,points_1,points_2)
 
                 rep_match_numbers[index] += rep_matches
                 rep_gt_numbers[index] += rep_gt
@@ -250,16 +270,28 @@ if __name__ == '__main__':
                 sum_dist[index] += dist
                 total_match_num[index] += num_2
                 desc_num[index] += num_1
-
-            cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi.numpy()*255)
-            # cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
-            cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.numpy()*255)
-            cv2.imwrite("{}/input_img/{:08d}.jpg".format(flags.output_path,img_num),(input_img.cpu().numpy()+1)*127.5)
-            #变换后的
-            cv2.imwrite("{}/heatmap_transformed/{:08d}.jpg".format(flags.output_path,img_num),nms_semi_transformed.numpy()*255)
-            # cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.cpu().numpy()*255)
-            cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.numpy()*255)
-            cv2.imwrite("{}/input_img_transformed/{:08d}.jpg".format(flags.output_path,img_num),(input_img_transformed.cpu().numpy()+1)*127.5)
+            
+            if flags.representation == "sae":
+                cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi.numpy()*255)
+                # cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
+                cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.numpy()*255)
+                cv2.imwrite("{}/input_img/{:08d}.jpg".format(flags.output_path,img_num),(input_img.cpu().numpy()+1)*127.5)
+                #变换后的
+                cv2.imwrite("{}/heatmap_transformed/{:08d}.jpg".format(flags.output_path,img_num),nms_semi_transformed.numpy()*255)
+                # cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.cpu().numpy()*255)
+                cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.numpy()*255)
+                cv2.imwrite("{}/input_img_transformed/{:08d}.jpg".format(flags.output_path,img_num),(input_img_transformed.cpu().numpy()+1)*127.5)
+            else:
+                cv2.imwrite("{}/heatmap/{:08d}.jpg".format(flags.output_path,img_num),nms_semi.numpy()*255)
+                # cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.cpu().numpy()*255)
+                cv2.imwrite("{}/label/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap.numpy()*255)
+                cv2.imwrite("{}/input_img/{:08d}.jpg".format(flags.output_path,img_num),(input_img.cpu().numpy()*255))
+                #变换后的
+                cv2.imwrite("{}/heatmap_transformed/{:08d}.jpg".format(flags.output_path,img_num),nms_semi_transformed.numpy()*255)
+                # cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.cpu().numpy()*255)
+                cv2.imwrite("{}/label_transformed/{:08d}.jpg".format(flags.output_path,img_num),label_heatmap_transformed.numpy()*255)
+                cv2.imwrite("{}/input_img_transformed/{:08d}.jpg".format(flags.output_path,img_num),(input_img_transformed.cpu().numpy()*255))
+            
             #保存匹配结果图像
             cv2.imwrite("{}/matched_result/{:08d}.jpg".format(flags.output_path,img_num), matched_img)
 
@@ -282,8 +314,55 @@ if __name__ == '__main__':
         localization_error = sum_dist[index]/match_numbers[index]
         repeatability = rep_match_numbers[index]/rep_gt_numbers[index]
         NN_mAP = desc_num[index]/total_match_num[index]
+        recalls.append(test_recall)
+        precisions.append(test_precision)
+        LEs.append(localization_error)
+        Repeatabilities.append(repeatability)
+        NNmAPs.append(NN_mAP)
         print(f"\nThreshold: {threshold} \nTest Recall: {test_recall}, Test Precision: {test_precision}, Localization Error: {localization_error}, Repeatability: {repeatability}, NN_mAP: {NN_mAP}")
 
-        
+    with open(os.path.join(flags.output_path,"data.txt"),"w+") as file:
+        for t,r,p,le,re,nn in zip(threshold_list,recalls,precisions,LEs,Repeatabilities,NNmAPs):
+            file.write(f'{t}\t{r}\t{p}\t{le}\t{re}\t{nn}\n')
+    
+    print(f'Data written')
 
+    plt.figure(figsize=(8, 6))
+    plt.plot(threshold_list, precisions, marker='o', linestyle='-')
+    plt.xlabel('Threshold')
+    plt.ylabel('Precision')
+    plt.title('Precision Curve')
+    plt.grid(True)
+    plt.savefig(os.path.join(flags.output_path,"precision.png"))
 
+    plt.figure(figsize=(8, 6))
+    plt.plot(threshold_list, recalls, marker='o', linestyle='-')
+    plt.xlabel('Threshold')
+    plt.ylabel('Recall')
+    plt.title('Recall Curve')
+    plt.grid(True)
+    plt.savefig(os.path.join(flags.output_path,"recall.png"))
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(threshold_list, Repeatabilities, marker='o', linestyle='-')
+    plt.xlabel('Threshold')
+    plt.ylabel('Repeatability')
+    plt.title('Repeatability Curve')
+    plt.grid(True)
+    plt.savefig(os.path.join(flags.output_path,"Repeatability.png"))
+    
+    plt.figure(figsize=(8, 6))
+    plt.plot(threshold_list, LEs, marker='o', linestyle='-')
+    plt.xlabel('Threshold')
+    plt.ylabel('Localization Error')
+    plt.title('Localization Error Curve')
+    plt.grid(True)
+    plt.savefig(os.path.join(flags.output_path,"Localization_Error.png"))
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(threshold_list, NNmAPs, marker='o', linestyle='-')
+    plt.xlabel('Threshold')
+    plt.ylabel('NNmAP')
+    plt.title('NNmAP Curve')
+    plt.grid(True)
+    plt.savefig(os.path.join(flags.output_path,"NNmAP.png"))

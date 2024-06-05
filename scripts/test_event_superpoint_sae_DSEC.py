@@ -80,8 +80,8 @@ if __name__ == '__main__':
     # model, and put to device
     model = EventCornerSuperpoint(crop_dimension=(224, 224))
     ckpt = torch.load(flags.checkpoint)
-    model.load_state_dict(ckpt["state_dict"],strict=False)
-    # model.backbone.load_state_dict(ckpt,strict=False)
+    # model.load_state_dict(ckpt["state_dict"],strict=False)
+    model.backbone.load_state_dict(ckpt,strict=False)
     model = model.to(flags.device)
 
     model = model.eval()
